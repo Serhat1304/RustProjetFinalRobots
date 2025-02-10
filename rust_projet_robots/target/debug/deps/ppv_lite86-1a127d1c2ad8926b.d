@@ -1,0 +1,10 @@
+/Users/serhatkus/Alternance/efrei/Semestre 10/Rust et WebAssembly/Projet Final/RustProjetFinalRobots/rust_projet_robots/target/debug/deps/libppv_lite86-1a127d1c2ad8926b.rmeta: /Users/serhatkus/.cargo/registry/src/index.crates.io-6f17d22bba15001f/ppv-lite86-0.2.20/src/lib.rs /Users/serhatkus/.cargo/registry/src/index.crates.io-6f17d22bba15001f/ppv-lite86-0.2.20/src/soft.rs /Users/serhatkus/.cargo/registry/src/index.crates.io-6f17d22bba15001f/ppv-lite86-0.2.20/src/types.rs /Users/serhatkus/.cargo/registry/src/index.crates.io-6f17d22bba15001f/ppv-lite86-0.2.20/src/generic.rs
+
+/Users/serhatkus/Alternance/efrei/Semestre 10/Rust et WebAssembly/Projet Final/RustProjetFinalRobots/rust_projet_robots/target/debug/deps/libppv_lite86-1a127d1c2ad8926b.rlib: /Users/serhatkus/.cargo/registry/src/index.crates.io-6f17d22bba15001f/ppv-lite86-0.2.20/src/lib.rs /Users/serhatkus/.cargo/registry/src/index.crates.io-6f17d22bba15001f/ppv-lite86-0.2.20/src/soft.rs /Users/serhatkus/.cargo/registry/src/index.crates.io-6f17d22bba15001f/ppv-lite86-0.2.20/src/types.rs /Users/serhatkus/.cargo/registry/src/index.crates.io-6f17d22bba15001f/ppv-lite86-0.2.20/src/generic.rs
+
+/Users/serhatkus/Alternance/efrei/Semestre 10/Rust et WebAssembly/Projet Final/RustProjetFinalRobots/rust_projet_robots/target/debug/deps/ppv_lite86-1a127d1c2ad8926b.d: /Users/serhatkus/.cargo/registry/src/index.crates.io-6f17d22bba15001f/ppv-lite86-0.2.20/src/lib.rs /Users/serhatkus/.cargo/registry/src/index.crates.io-6f17d22bba15001f/ppv-lite86-0.2.20/src/soft.rs /Users/serhatkus/.cargo/registry/src/index.crates.io-6f17d22bba15001f/ppv-lite86-0.2.20/src/types.rs /Users/serhatkus/.cargo/registry/src/index.crates.io-6f17d22bba15001f/ppv-lite86-0.2.20/src/generic.rs
+
+/Users/serhatkus/.cargo/registry/src/index.crates.io-6f17d22bba15001f/ppv-lite86-0.2.20/src/lib.rs:
+/Users/serhatkus/.cargo/registry/src/index.crates.io-6f17d22bba15001f/ppv-lite86-0.2.20/src/soft.rs:
+/Users/serhatkus/.cargo/registry/src/index.crates.io-6f17d22bba15001f/ppv-lite86-0.2.20/src/types.rs:
+/Users/serhatkus/.cargo/registry/src/index.crates.io-6f17d22bba15001f/ppv-lite86-0.2.20/src/generic.rs:
