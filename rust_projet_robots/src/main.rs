@@ -42,8 +42,8 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .insert_resource(SeedCarte { seed }) // Stocke la seed pour garantir une génération reproductible
-        .add_systems(Startup, initialiser_carte)
-        .add_systems(Startup, generer_carte)
+        .add_systems(Startup, initialiser_map)
+        .add_systems(Startup, generer_map)
         .run();
 }
 
@@ -69,12 +69,12 @@ fn generer_seed_aleatoire() -> u64 {
 }
 
 /// Initialise la caméra dans la simulation
-fn initialiser_carte(mut commandes: Commands) {
+fn initialiser_map(mut commandes: Commands) {
     commandes.spawn(Camera2dBundle::default());
 }
 
 /// génère la carte avec les obstacles et les ressources
-fn generer_carte(mut commandes: Commands, seed_carte: Res<SeedCarte>) {
+fn generer_map(mut commandes: Commands, seed_carte: Res<SeedCarte>) {
     println!("Seed Actuel: {}", seed_carte.seed);
 
     let bruit_perlin = Perlin::new(seed_carte.seed as u32);
