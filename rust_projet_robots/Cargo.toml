@@ -1,0 +1,6 @@
+[package]
+name = "rust_projet_robots"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
