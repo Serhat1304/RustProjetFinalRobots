@@ -102,9 +102,9 @@ fn generer_map(mut commandes: Commands, seed_carte: Res<SeedCarte>) {
         for x in 0..LARGEUR_CARTE {
             if carte[y][x] == TypePixel::Vide {
                 carte[y][x] = match generateur_aleatoire.gen_range(0..100) {
-                    0..=5 => TypePixel::Energie,        // 6% de chance
-                    6..=10 => TypePixel::Minerai,      // 5% de chance
-                    11..=14 => TypePixel::SiteScientifique, // 4% de chance
+                    0..=5 => TypePixel::Energie,
+                    6..=10 => TypePixel::Minerai,
+                    11..=14 => TypePixel::SiteScientifique,
                     _ => TypePixel::Vide,
                 };
             }
@@ -115,7 +115,7 @@ fn generer_map(mut commandes: Commands, seed_carte: Res<SeedCarte>) {
     let (pos_x, pos_y) = placer_station(&mut carte, &mut generateur_aleatoire);
     println!("Station placée en ({}, {})", pos_x, pos_y);
 
-    // 🔹 Création des entités Bevy pour afficher la carte
+    // Création des entités Bevy pour afficher la carte
     for y in 0..HAUTEUR_CARTE {
         for x in 0..LARGEUR_CARTE {
             let couleur = match carte[y][x] {
@@ -123,7 +123,7 @@ fn generer_map(mut commandes: Commands, seed_carte: Res<SeedCarte>) {
                 TypePixel::Energie => Color::rgb(1.0, 1.0, 0.0),
                 TypePixel::Minerai => Color::rgb(0.5, 0.3, 0.1),
                 TypePixel::SiteScientifique => Color::rgb(0.0, 0.8, 0.8),
-                TypePixel::Station => Color::rgb(1.0, 0.0, 0.0), // 🔴 Station en rouge
+                TypePixel::Station => Color::rgb(1.0, 0.0, 0.0),
                 TypePixel::Vide => Color::rgb(0.8, 0.8, 0.8),
             };
 
