@@ -30,8 +30,8 @@ enum TypePixel {
 
 /// Composant Bevy pour les entités représentant un pixel de la carte
 #[derive(Component)]
-struct Tuile {
-    type_tuile: TypePixel,
+struct Pixel {
+    type_pixel: TypePixel,
 }
 
 fn main() {
@@ -97,7 +97,7 @@ fn generer_map(mut commandes: Commands, seed_carte: Res<SeedCarte>) {
     // Limite la taille des obstacles pour éviter des zones trop grandes
     limiter_taille_obstacles(&mut carte);
 
-    // Ajout aléatoire des ressources sur les tuiles vides
+    // Ajout aléatoire des ressources sur les pixel vides
     for y in 0..HAUTEUR_CARTE {
         for x in 0..LARGEUR_CARTE {
             if carte[y][x] == TypePixel::Vide {
@@ -140,7 +140,7 @@ fn generer_map(mut commandes: Commands, seed_carte: Res<SeedCarte>) {
                 )),
                 ..Default::default()
             })
-                .insert(Tuile { type_tuile: carte[y][x] });
+                .insert(Pixel { type_pixel: carte[y][x] });
         }
     }
 }
