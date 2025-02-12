@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use noise::{NoiseFn, Perlin};
 use rand::{prelude::*, SeedableRng};
+//use std::collections::HashMap;
 use std::env;
 
 // Paramètres de la carte
@@ -65,10 +66,11 @@ struct StationPosition {
 #[derive(Debug)]
 enum RobotState {
     Exploring,
-    Returning { resource_x: isize, resource_y: isize },
+    // Le robot mémorise la position et le type de la ressource trouvée
+    Returning { resource_x: isize, resource_y: isize, resource_type: TypePixel },
 }
 
-/// Composant pour les robots (on y ajoute le champ `state`)
+/// Composant pour les robots
 #[derive(Component)]
 struct Robot {
     x: isize,
@@ -86,6 +88,20 @@ struct RobotTimer {
 #[derive(Resource)]
 struct RobotsSpawned(bool);
 
+/// Structure représentant une découverte (une ressource découverte par un robot)
+#[derive(Debug, Clone)]
+struct Discovery {
+    resource: TypePixel,
+    x: isize,
+    y: isize,
+}
+
+/// Ressource représentant le dépôt de la station (similaire à un repo Git)
+#[derive(Resource, Debug)]
+struct StationRepository {
+    discoveries: Vec<Discovery>,
+}
+
 fn main() {
     // Récupère la seed passée en argument ou en génère une aléatoire
     let seed = obtenir_seed_depuis_arguments().unwrap_or_else(generer_seed_aleatoire);
@@ -93,20 +109,22 @@ fn main() {
 
     App::new()
         .add_plugins(DefaultPlugins)
-        // On insère la seed afin d’obtenir une génération reproductible
+        // On insère la seed pour une génération reproductible
         .insert_resource(SeedCarte { seed })
-        // Ajout des systèmes en startup
+        // Dépôt de la station qui stockera les découvertes (le "repo Git")
+        .insert_resource(StationRepository { discoveries: Vec::new() })
+        // Systèmes en startup
         .add_systems(Startup, initialiser_map)
         .add_systems(Startup, generer_map)
         .add_systems(Startup, setup_robot_timer)
         .add_systems(Startup, setup_robot_spawn_flag)
-        // Les systèmes en update (les commandes startup auront déjà été appliquées)
+        // Systèmes en update
         .add_systems(Update, spawn_robots)
         .add_systems(Update, deplacement_robots)
         .run();
 }
 
-/// Initialise la caméra dans la simulation
+/// Initialise la caméra
 fn initialiser_map(mut commandes: Commands) {
     commandes.spawn(Camera2dBundle::default());
 }
@@ -120,7 +138,7 @@ fn generer_map(mut commandes: Commands, seed_carte: Res<SeedCarte>) {
 
     let mut carte = vec![vec![TypePixel::Vide; LARGEUR_CARTE]; HAUTEUR_CARTE];
 
-    // Génère les obstacles à l'aide du bruit de Perlin
+    // Génère les obstacles à partir du bruit de Perlin
     for y in 0..HAUTEUR_CARTE {
         for x in 0..LARGEUR_CARTE {
             let valeur_bruit = bruit_perlin.get([x as f64 * 0.1, y as f64 * 0.1]);
@@ -130,10 +148,10 @@ fn generer_map(mut commandes: Commands, seed_carte: Res<SeedCarte>) {
         }
     }
 
-    // Limite la taille des obstacles pour éviter des zones trop étendues
+    // Limite la taille des obstacles
     limiter_taille_obstacles(&mut carte);
 
-    // Ajoute aléatoirement des ressources sur les pixels vides
+    // Ajoute aléatoirement des ressources sur les cases vides
     for y in 0..HAUTEUR_CARTE {
         for x in 0..LARGEUR_CARTE {
             if carte[y][x] == TypePixel::Vide {
@@ -151,7 +169,7 @@ fn generer_map(mut commandes: Commands, seed_carte: Res<SeedCarte>) {
     let (pos_x, pos_y) = placer_station(&mut carte, &mut generateur_aleatoire);
     println!("Station placée en ({}, {})", pos_x, pos_y);
 
-    // Insère la carte et la position de la station dans les ressources.
+    // Insère la carte et la position de la station dans les ressources
     commandes.insert_resource(Carte {
         donnees: carte.clone(),
         largeur: LARGEUR_CARTE,
@@ -159,7 +177,7 @@ fn generer_map(mut commandes: Commands, seed_carte: Res<SeedCarte>) {
     });
     commandes.insert_resource(StationPosition { x: pos_x, y: pos_y });
 
-    // Crée les entités permettant d'afficher la carte
+    // Création des entités d'affichage de la carte
     for y in 0..HAUTEUR_CARTE {
         for x in 0..LARGEUR_CARTE {
             let type_pixel = carte[y][x];
@@ -168,7 +186,7 @@ fn generer_map(mut commandes: Commands, seed_carte: Res<SeedCarte>) {
                 TypePixel::Energie => Color::rgb(1.0, 1.0, 0.0),
                 TypePixel::Minerai => Color::rgb(0.5, 0.3, 0.1),
                 TypePixel::SiteScientifique => Color::rgb(0.0, 0.8, 0.8),
-                TypePixel::Station => Color::rgb(1.0, 0.0, 0.0), // Station en rouge
+                TypePixel::Station => Color::rgb(1.0, 0.0, 0.0),
                 TypePixel::Vide => Color::rgb(0.8, 0.8, 0.8),
             };
 
@@ -194,7 +212,7 @@ fn generer_map(mut commandes: Commands, seed_carte: Res<SeedCarte>) {
 /// Configure un Timer pour le déplacement des robots
 fn setup_robot_timer(mut commandes: Commands) {
     commandes.insert_resource(RobotTimer {
-        timer: Timer::from_seconds(0.5, TimerMode::Repeating),
+        timer: Timer::from_seconds(0.1, TimerMode::Repeating),
     });
 }
 
@@ -203,28 +221,27 @@ fn setup_robot_spawn_flag(mut commandes: Commands) {
     commandes.insert_resource(RobotsSpawned(false));
 }
 
-/// Système qui spawne les robots (uniquement une fois, lors du premier update)
+/// Spawne les robots (ici, un seul robot) en les plaçant à la station
 fn spawn_robots(
     mut commandes: Commands,
     station: Res<StationPosition>,
     mut robots_spawned: ResMut<RobotsSpawned>,
 ) {
-    // Si les robots ont déjà été spawns, on ne fait rien.
     if robots_spawned.0 {
         return;
     }
 
-    let nb_robots = 1;
+    let nb_robots = 2;
     for _ in 0..nb_robots {
         let translation = Vec3::new(
             station.x as f32 * TAILLE_CASE - (LARGEUR_CARTE as f32 * TAILLE_CASE) / 2.0,
             station.y as f32 * TAILLE_CASE - (HAUTEUR_CARTE as f32 * TAILLE_CASE) / 2.0,
-            1.0, // Z pour être au-dessus de la carte
+            1.0, // Pour être au-dessus de la carte
         );
         commandes.spawn((
             SpriteBundle {
                 sprite: Sprite {
-                    color: Color::rgb(0.0, 1.0, 0.0), // robot en vert
+                    color: Color::rgb(0.0, 1.0, 0.0), // Robot en vert
                     custom_size: Some(Vec2::splat(TAILLE_CASE)),
                     ..Default::default()
                 },
@@ -234,28 +251,23 @@ fn spawn_robots(
             Robot {
                 x: station.x as isize,
                 y: station.y as isize,
-                state: RobotState::Exploring, // On initialise le robot en mode exploration
+                state: RobotState::Exploring,
             },
         ));
     }
 
-    // On passe le flag à true afin de ne spawner les robots qu'une seule fois.
     robots_spawned.0 = true;
 }
 
 /// Système de déplacement des robots
-/// On modifie le système pour que :
-/// - en mode Exploring, le robot se déplace aléatoirement et
-///   vérifie s'il tombe sur une ressource (qu'il signale alors et passe en mode Returning),
-/// - en mode Returning, le robot se dirige vers la station.
 fn deplacement_robots(
     mut timer: ResMut<RobotTimer>,
     time: Res<Time>,
     mut query: Query<(&mut Robot, &mut Transform)>,
-    mut carte: ResMut<Carte>,  // mutable car on va modifier la carte (ex : marquer la ressource comme découverte)
+    mut carte: ResMut<Carte>,
     station: Res<StationPosition>,
+    mut repo: ResMut<StationRepository>,
 ) {
-    // On attend que le timer soit écoulé
     if !timer.timer.tick(time.delta()).finished() {
         return;
     }
@@ -271,12 +283,10 @@ fn deplacement_robots(
     for (mut robot, mut transform) in query.iter_mut() {
         match robot.state {
             RobotState::Exploring => {
-                // Déplacement aléatoire
                 let (dx, dy) = directions[rng.gen_range(0..directions.len())];
                 let new_x = robot.x + dx;
                 let new_y = robot.y + dy;
 
-                // Vérifie que la case n'est pas un obstacle
                 if !carte.est_obstacle(new_x, new_y) {
                     robot.x = new_x;
                     robot.y = new_y;
@@ -285,36 +295,45 @@ fn deplacement_robots(
                     transform.translation.y =
                         new_y as f32 * TAILLE_CASE - (carte.hauteur as f32 * TAILLE_CASE) / 2.0;
 
-                    // Si la nouvelle case contient une ressource, on la signale
-                    if new_x >= 0 && new_y >= 0 && new_x < carte.largeur as isize && new_y < carte.hauteur as isize {
+                    // Si le robot trouve une ressource, il passe en mode Returning
+                    if new_x >= 0
+                        && new_y >= 0
+                        && new_x < carte.largeur as isize
+                        && new_y < carte.hauteur as isize
+                    {
                         let tile = &mut carte.donnees[new_y as usize][new_x as usize];
                         match tile {
                             TypePixel::Energie | TypePixel::Minerai | TypePixel::SiteScientifique => {
-                                println!("Robot a trouvé une ressource {:?} en ({}, {})", tile, new_x, new_y);
-                                // On marque la ressource comme découverte pour éviter de la redécouvrir
+                                println!(
+                                    "Robot a trouvé une ressource {:?} en ({}, {})",
+                                    tile, new_x, new_y
+                                );
+                                let resource_type = *tile;
+                                // Marquer la ressource comme découverte pour éviter la redécouverte
                                 *tile = TypePixel::Vide;
-                                // Le robot passe en mode RETURNING, on garde en mémoire la position de la ressource trouvée
-                                robot.state = RobotState::Returning { resource_x: new_x, resource_y: new_y };
+                                robot.state = RobotState::Returning {
+                                    resource_x: new_x,
+                                    resource_y: new_y,
+                                    resource_type
+                                };
                             },
                             _ => {}
                         }
                     }
                 }
             },
-            RobotState::Returning { resource_x, resource_y } => {
-                // Le robot se dirige vers la station
+            RobotState::Returning { resource_x, resource_y, resource_type } => {
                 let target_x = station.x as isize;
                 let target_y = station.y as isize;
                 if robot.x == target_x && robot.y == target_y {
-                    // Arrivé à la station : on informe (ici via un println!) et on repasse en mode exploration
-                    println!("Station informée de la ressource trouvée en ({}, {})", resource_x, resource_y);
+                    // À l'arrivée, le robot commit sa découverte dans le dépôt de la station
+                    let discovery = Discovery { resource: resource_type, x: resource_x, y: resource_y };
+                    commit_discovery(&mut repo, discovery);
                     robot.state = RobotState::Exploring;
                 } else {
-                    // Calcul du pas à effectuer pour se rapprocher de la station
                     let dx = if target_x > robot.x { 1 } else if target_x < robot.x { -1 } else { 0 };
                     let dy = if target_y > robot.y { 1 } else if target_y < robot.y { -1 } else { 0 };
 
-                    // On essaie de se déplacer horizontalement, puis verticalement si nécessaire
                     if dx != 0 && !carte.est_obstacle(robot.x + dx, robot.y) {
                         robot.x += dx;
                     } else if dy != 0 && !carte.est_obstacle(robot.x, robot.y + dy) {
@@ -327,6 +346,34 @@ fn deplacement_robots(
                 }
             },
         }
+    }
+}
+
+/// Fonction de commit d'une découverte dans le dépôt de la station
+/// Simule une gestion de conflits à la manière de Git :
+/// - Si aucune découverte n'existe pour la position, la découverte est ajoutée.
+/// - Sinon, si le type est différent, un conflit est signalé / on garde l'existant.
+fn commit_discovery(repo: &mut StationRepository, discovery: Discovery) {
+    if let Some(existing) = repo
+        .discoveries
+        .iter()
+        .find(|d| d.x == discovery.x && d.y == discovery.y)
+    {
+        if existing.resource != discovery.resource {
+            println!(
+                "Conflit détecté pour la ressource en ({}, {}): {:?} vs {:?}",
+                discovery.x, discovery.y, existing.resource, discovery.resource
+            );
+            // Pour cet exemple conservons la découverte existante.
+        } else {
+            println!(
+                "Découverte déjà commitée pour la ressource en ({}, {})",
+                discovery.x, discovery.y
+            );
+        }
+    } else {
+        repo.discoveries.push(discovery.clone());
+        println!("Découverte commitée: {:?}", discovery);
     }
 }
 
