@@ -10,9 +10,7 @@ const TAILLE_CASE: f32 = 20.0;
 
 // Seuil de bruit définissant les obstacles (plus haut = plus d'obstacles)
 const SEUIL_OBSTACLE: f64 = 0.5;
-
 // Taille maximale des obstacles en pixels connectés
-// Pour éviter d'avoir des obstacles trop grands.
 const MAX_TAILLE_OBSTACLE: usize = 5;
 
 /// Enumération des types de pixel présents sur la carte
@@ -29,8 +27,6 @@ enum TypePixel {
 /// Composant Bevy pour les entités représentant un pixel de la carte
 #[derive(Component)]
 struct Pixel {
-    // Ce champ est utilisé lors de la création de l'entité,
-    // même s'il n'est pas directement lu par la suite.
     type_pixel: TypePixel,
 }
 
@@ -65,11 +61,19 @@ struct StationPosition {
     y: usize,
 }
 
-/// Composant pour les robots
+/// Enumération des états possibles du robot
+#[derive(Debug)]
+enum RobotState {
+    Exploring,
+    Returning { resource_x: isize, resource_y: isize },
+}
+
+/// Composant pour les robots (on y ajoute le champ `state`)
 #[derive(Component)]
 struct Robot {
     x: isize,
     y: isize,
+    state: RobotState,
 }
 
 /// Ressource pour un Timer permettant de gérer la fréquence de déplacement
@@ -230,6 +234,7 @@ fn spawn_robots(
             Robot {
                 x: station.x as isize,
                 y: station.y as isize,
+                state: RobotState::Exploring, // On initialise le robot en mode exploration
             },
         ));
     }
@@ -238,12 +243,17 @@ fn spawn_robots(
     robots_spawned.0 = true;
 }
 
-/// Système de déplacement aléatoire des robots
+/// Système de déplacement des robots
+/// On modifie le système pour que :
+/// - en mode Exploring, le robot se déplace aléatoirement et
+///   vérifie s'il tombe sur une ressource (qu'il signale alors et passe en mode Returning),
+/// - en mode Returning, le robot se dirige vers la station.
 fn deplacement_robots(
     mut timer: ResMut<RobotTimer>,
     time: Res<Time>,
     mut query: Query<(&mut Robot, &mut Transform)>,
-    carte: Res<Carte>,
+    mut carte: ResMut<Carte>,  // mutable car on va modifier la carte (ex : marquer la ressource comme découverte)
+    station: Res<StationPosition>,
 ) {
     // On attend que le timer soit écoulé
     if !timer.timer.tick(time.delta()).finished() {
@@ -258,20 +268,64 @@ fn deplacement_robots(
         (-1, 0),  // Gauche
     ];
 
-    for (mut robot, mut transform) in &mut query {
-        let (dx, dy) = directions[rng.gen_range(0..directions.len())];
+    for (mut robot, mut transform) in query.iter_mut() {
+        match robot.state {
+            RobotState::Exploring => {
+                // Déplacement aléatoire
+                let (dx, dy) = directions[rng.gen_range(0..directions.len())];
+                let new_x = robot.x + dx;
+                let new_y = robot.y + dy;
 
-        let new_x = robot.x + dx;
-        let new_y = robot.y + dy;
+                // Vérifie que la case n'est pas un obstacle
+                if !carte.est_obstacle(new_x, new_y) {
+                    robot.x = new_x;
+                    robot.y = new_y;
+                    transform.translation.x =
+                        new_x as f32 * TAILLE_CASE - (carte.largeur as f32 * TAILLE_CASE) / 2.0;
+                    transform.translation.y =
+                        new_y as f32 * TAILLE_CASE - (carte.hauteur as f32 * TAILLE_CASE) / 2.0;
 
-        // Si la nouvelle case n'est pas un obstacle (ou hors limites), on déplace le robot
-        if !carte.est_obstacle(new_x, new_y) {
-            robot.x = new_x;
-            robot.y = new_y;
-            transform.translation.x =
-                new_x as f32 * TAILLE_CASE - (carte.largeur as f32 * TAILLE_CASE) / 2.0;
-            transform.translation.y =
-                new_y as f32 * TAILLE_CASE - (carte.hauteur as f32 * TAILLE_CASE) / 2.0;
+                    // Si la nouvelle case contient une ressource, on la signale
+                    if new_x >= 0 && new_y >= 0 && new_x < carte.largeur as isize && new_y < carte.hauteur as isize {
+                        let tile = &mut carte.donnees[new_y as usize][new_x as usize];
+                        match tile {
+                            TypePixel::Energie | TypePixel::Minerai | TypePixel::SiteScientifique => {
+                                println!("Robot a trouvé une ressource {:?} en ({}, {})", tile, new_x, new_y);
+                                // On marque la ressource comme découverte pour éviter de la redécouvrir
+                                *tile = TypePixel::Vide;
+                                // Le robot passe en mode RETURNING, on garde en mémoire la position de la ressource trouvée
+                                robot.state = RobotState::Returning { resource_x: new_x, resource_y: new_y };
+                            },
+                            _ => {}
+                        }
+                    }
+                }
+            },
+            RobotState::Returning { resource_x, resource_y } => {
+                // Le robot se dirige vers la station
+                let target_x = station.x as isize;
+                let target_y = station.y as isize;
+                if robot.x == target_x && robot.y == target_y {
+                    // Arrivé à la station : on informe (ici via un println!) et on repasse en mode exploration
+                    println!("Station informée de la ressource trouvée en ({}, {})", resource_x, resource_y);
+                    robot.state = RobotState::Exploring;
+                } else {
+                    // Calcul du pas à effectuer pour se rapprocher de la station
+                    let dx = if target_x > robot.x { 1 } else if target_x < robot.x { -1 } else { 0 };
+                    let dy = if target_y > robot.y { 1 } else if target_y < robot.y { -1 } else { 0 };
+
+                    // On essaie de se déplacer horizontalement, puis verticalement si nécessaire
+                    if dx != 0 && !carte.est_obstacle(robot.x + dx, robot.y) {
+                        robot.x += dx;
+                    } else if dy != 0 && !carte.est_obstacle(robot.x, robot.y + dy) {
+                        robot.y += dy;
+                    }
+                    transform.translation.x =
+                        robot.x as f32 * TAILLE_CASE - (carte.largeur as f32 * TAILLE_CASE) / 2.0;
+                    transform.translation.y =
+                        robot.y as f32 * TAILLE_CASE - (carte.hauteur as f32 * TAILLE_CASE) / 2.0;
+                }
+            },
         }
     }
 }
