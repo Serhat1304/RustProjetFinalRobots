@@ -277,7 +277,7 @@ fn creer_robots(
         return;
     }
 
-    let nb_explorateurs = 1;
+    let nb_explorateurs = 3;
     let nb_collecteurs = 1;
 
     // Création de l'explorateur
@@ -386,14 +386,6 @@ fn deplacer_robots(
                                 if (tuile == TypePixel::Energie || tuile == TypePixel::Minerai) && robot.cargo.is_none() {
                                     println!("Explorateur détecte la ressource {:?} en ({}, {})", tuile, nouvelle_x, nouvelle_y);
                                     robot.cargo = Some((tuile, nouvelle_x, nouvelle_y));
-                                    robot.etat = EtatRobot::Retourner;
-                                }
-                                // Pour le site scientifique, l'explorateur collecte directement la ressource
-                                else if tuile == TypePixel::SiteScientifique && robot.cargo.is_none() {
-                                    println!("Explorateur collecte le site scientifique en ({}, {})", nouvelle_x, nouvelle_y);
-                                    robot.cargo = Some((tuile, nouvelle_x, nouvelle_y));
-                                    // La case devient vide
-                                    carte.donnees[nouvelle_y as usize][nouvelle_x as usize] = TypePixel::Vide;
                                     robot.etat = EtatRobot::Retourner;
                                 }
                             }
