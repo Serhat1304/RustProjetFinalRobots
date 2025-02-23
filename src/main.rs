@@ -163,7 +163,6 @@ fn main() {
 fn initialiser_camera(mut commandes: Commands) {
     commandes.spawn(Camera2dBundle::default());
 }
-
 fn generer_carte(mut commandes: Commands, seed_carte: Res<SeedCarte>) {
     println!("Seed Actuel: {}", seed_carte.seed);
 
@@ -206,6 +205,7 @@ fn generer_carte(mut commandes: Commands, seed_carte: Res<SeedCarte>) {
     });
     commandes.insert_resource(PositionStation { x: pos_x, y: pos_y });
 
+    // Modification : on définit une valeur z différente pour la station
     for y in 0..HAUTEUR_CARTE {
         for x in 0..LARGEUR_CARTE {
             let type_pixel = carte[y][x];
@@ -218,10 +218,13 @@ fn generer_carte(mut commandes: Commands, seed_carte: Res<SeedCarte>) {
                 TypePixel::Vide => Color::rgb(0.8, 0.8, 0.8),
             };
 
+            // Si c'est la station, on l'affiche avec un z plus élevé
+            let z_coord = if type_pixel == TypePixel::Station { 2.0 } else { 0.0 };
+
             let translation = Vec3::new(
                 x as f32 * TAILLE_CASE - (LARGEUR_CARTE as f32 * TAILLE_CASE) / 2.0,
                 y as f32 * TAILLE_CASE - (HAUTEUR_CARTE as f32 * TAILLE_CASE) / 2.0,
-                0.0,
+                z_coord,
             );
 
             commandes
@@ -238,6 +241,7 @@ fn generer_carte(mut commandes: Commands, seed_carte: Res<SeedCarte>) {
         }
     }
 }
+
 
 fn configurer_minuterie_robot(mut commandes: Commands) {
     commandes.insert_resource(MinuterieRobot {
@@ -427,6 +431,7 @@ fn deplacer_robots(
                                 if !deja_trouve {
                                     println!("Explorateur détecte la ressource {:?} en ({}, {})", tuile, new_x, new_y);
                                     robot.decouvertes.push(Decouverte { resource: tuile, x: new_x, y: new_y });
+                                    // Définir le nombre de ressources découvertes avant de retrouner à la station
                                     if robot.decouvertes.len() >= 2 {
                                         robot.etat = EtatRobot::Retourner;
                                     }
