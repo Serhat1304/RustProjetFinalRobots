@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use noise::{NoiseFn, Perlin};
 use rand::{prelude::*, SeedableRng};
+use std::collections::HashSet;
 use std::env;
 
 // ============================
@@ -95,19 +96,21 @@ enum RoleRobot {
     Collecteur,
 }
 
-// On modifie le composant Robot pour y ajouter un vecteur de découvertes pour les explorateurs
+// Le composant Robot contient désormais un ensemble `visited` pour optimiser l'exploration.
 #[derive(Component)]
 struct Robot {
     x: isize,
     y: isize,
     etat: EtatRobot,
     role: RoleRobot,
-    /// Pour les explorateurs, stocke les découvertes (jusqu'à 10)
+    /// Pour les explorateurs : stocke les découvertes (jusqu'à 10)
     decouvertes: Vec<Decouverte>,
-    /// Pour les collecteurs, contient la ressource récupérée (lorsqu’elle est chargée)
+    /// Pour les collecteurs : stocke la ressource récupérée (lorsqu’elle est chargée)
     cargo: Option<(TypePixel, isize, isize)>,
-    /// Pour les collecteurs, cible la position d'une ressource à récupérer
+    /// Pour les collecteurs : cible la position d'une ressource à récupérer
     cible: Option<(isize, isize)>,
+    /// Pour les explorateurs : ensemble des cases déjà visitées
+    visited: HashSet<(isize, isize)>,
 }
 
 // Ressource pour gérer la fréquence de déplacement des robots via un Timer
@@ -154,7 +157,7 @@ fn generer_carte(mut commandes: Commands, seed_carte: Res<SeedCarte>) {
     println!("Seed Actuel: {}", seed_carte.seed);
 
     let bruit_perlin = Perlin::new(seed_carte.seed as u32);
-    let mut generateur_aleatoire = StdRng::seed_from_u64(seed_carte.seed);
+    let mut generateur_aleatoire = rand::rngs::StdRng::seed_from_u64(seed_carte.seed);
 
     let mut carte = vec![vec![TypePixel::Vide; LARGEUR_CARTE]; HAUTEUR_CARTE];
 
@@ -250,7 +253,7 @@ fn creer_robots(
     let nb_explorateurs = 3;
     let nb_collecteurs = 1;
 
-    // Création des explorateurs (on initialise le vecteur "decouvertes" vide)
+    // Création des explorateurs avec un ensemble vide pour "visited"
     for _ in 0..nb_explorateurs {
         let translation = Vec3::new(
             station.x as f32 * TAILLE_CASE - (LARGEUR_CARTE as f32 * TAILLE_CASE) / 2.0,
@@ -275,6 +278,7 @@ fn creer_robots(
                 decouvertes: Vec::new(),
                 cargo: None,
                 cible: None,
+                visited: HashSet::new(),
             },
         ));
     }
@@ -301,9 +305,10 @@ fn creer_robots(
                 y: station.y as isize,
                 etat: EtatRobot::Explorer,
                 role: RoleRobot::Collecteur,
-                decouvertes: Vec::new(), // non utilisé pour les collecteurs
+                decouvertes: Vec::new(),
                 cargo: None,
                 cible: None,
+                visited: HashSet::new(), // Champ inutilisé pour les collecteurs
             },
         ));
     }
@@ -330,36 +335,61 @@ fn deplacer_robots(
         match robot.role {
             RoleRobot::Explorateur => {
                 match robot.etat {
-                    // Mode exploration : déplacement aléatoire et accumulation de découvertes
+                    // Mode exploration optimisé : le robot privilégie les cases non visitées
                     EtatRobot::Explorer => {
-                        let (dx, dy) = directions[rng.gen_range(0..directions.len())];
-                        let nouvelle_x = robot.x + dx;
-                        let nouvelle_y = robot.y + dy;
+                        // Extraire la position actuelle dans une variable temporaire pour éviter le conflit d'emprunt
+                        let current_position = (robot.x, robot.y);
+                        robot.visited.insert(current_position);
 
-                        if !carte.est_obstacle(nouvelle_x, nouvelle_y) {
-                            robot.x = nouvelle_x;
-                            robot.y = nouvelle_y;
-                            transform.translation.x = nouvelle_x as f32 * TAILLE_CASE - (carte.largeur as f32 * TAILLE_CASE) / 2.0;
-                            transform.translation.y = nouvelle_y as f32 * TAILLE_CASE - (carte.hauteur as f32 * TAILLE_CASE) / 2.0;
+                        // Construire la liste des cases voisines accessibles
+                        let possible_moves: Vec<(isize, isize)> = directions.iter()
+                            .map(|(dx, dy)| (robot.x + dx, robot.y + dy))
+                            .filter(|(nx, ny)| {
+                                *nx >= 0 &&
+                                    *ny >= 0 &&
+                                    *nx < carte.largeur as isize &&
+                                    *ny < carte.hauteur as isize &&
+                                    !carte.est_obstacle(*nx, *ny)
+                            })
+                            .collect();
 
-                            // Si la case contient une ressource (énergie ou minerai)
-                            if nouvelle_x >= 0 && nouvelle_y >= 0 && nouvelle_x < carte.largeur as isize && nouvelle_y < carte.hauteur as isize {
-                                let tuile = carte.donnees[nouvelle_y as usize][nouvelle_x as usize];
-                                if (tuile == TypePixel::Energie || tuile == TypePixel::Minerai) {
-                                    // Ajoute la découverte si elle n'a pas déjà été enregistrée par ce robot
-                                    let deja_trouve = robot.decouvertes.iter().any(|d| d.x == nouvelle_x && d.y == nouvelle_y);
-                                    if !deja_trouve {
-                                        println!("Explorateur détecte la ressource {:?} en ({}, {})", tuile, nouvelle_x, nouvelle_y);
-                                        robot.decouvertes.push(Decouverte { resource: tuile, x: nouvelle_x, y: nouvelle_y });
-                                        if robot.decouvertes.len() >= 10 {
-                                            robot.etat = EtatRobot::Retourner;
-                                        }
+                        // Parmi les cases accessibles, sélectionner celles non encore visitées
+                        let unvisited_moves: Vec<(isize, isize)> = possible_moves
+                            .iter()
+                            .cloned()
+                            .filter(|pos| !robot.visited.contains(pos))
+                            .collect();
+
+                        // Choisir une case : prioriser les non visitées, sinon choisir une accessible
+                        let (new_x, new_y) = if !unvisited_moves.is_empty() {
+                            unvisited_moves[rng.gen_range(0..unvisited_moves.len())]
+                        } else if !possible_moves.is_empty() {
+                            possible_moves[rng.gen_range(0..possible_moves.len())]
+                        } else {
+                            (robot.x, robot.y)
+                        };
+
+                        robot.x = new_x;
+                        robot.y = new_y;
+                        transform.translation.x = new_x as f32 * TAILLE_CASE - (carte.largeur as f32 * TAILLE_CASE) / 2.0;
+                        transform.translation.y = new_y as f32 * TAILLE_CASE - (carte.hauteur as f32 * TAILLE_CASE) / 2.0;
+
+                        // Si la case contient une ressource (énergie ou minerai)
+                        if new_x >= 0 && new_y >= 0 && new_x < carte.largeur as isize && new_y < carte.hauteur as isize {
+                            let tuile = carte.donnees[new_y as usize][new_x as usize];
+                            if tuile == TypePixel::Energie || tuile == TypePixel::Minerai {
+                                let deja_trouve = robot.decouvertes.iter().any(|d| d.x == new_x && d.y == new_y);
+                                if !deja_trouve {
+                                    println!("Explorateur détecte la ressource {:?} en ({}, {})", tuile, new_x, new_y);
+                                    robot.decouvertes.push(Decouverte { resource: tuile, x: new_x, y: new_y });
+                                    if robot.decouvertes.len() >= 2 {
+                                        robot.etat = EtatRobot::Retourner;
                                     }
                                 }
                             }
                         }
                     },
-                    // Mode retour : le robot se dirige vers la station pour "commiter" ses découvertes
+                    // Mode retour à la station pour enregistrer les découvertes
                     EtatRobot::Retourner => {
                         let cible_x = station.x as isize;
                         let cible_y = station.y as isize;
@@ -388,7 +418,6 @@ fn deplacer_robots(
             RoleRobot::Collecteur => {
                 match robot.etat {
                     EtatRobot::Explorer => {
-                        // Si le collecteur est à la station et n'a pas de cible, on lui assigne une ressource en retirant la découverte du dépôt
                         if robot.x == station.x as isize && robot.y == station.y as isize {
                             if robot.cible.is_none() {
                                 if let Some(index) = depot.decouvertes.iter().position(|d|
@@ -514,7 +543,7 @@ fn generer_seed_aleatoire() -> u64 {
 
 fn placer_station(
     carte: &mut Vec<Vec<TypePixel>>,
-    generateur_aleatoire: &mut StdRng,
+    generateur_aleatoire: &mut rand::rngs::StdRng,
 ) -> (usize, usize) {
     loop {
         let x = generateur_aleatoire.gen_range(0..LARGEUR_CARTE);
