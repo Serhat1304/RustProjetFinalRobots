@@ -82,6 +82,16 @@ struct Decouverte {
 }
 
 // ============================
+// Définition des modules spécialisés pour les robots
+// ============================
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum ModuleRobot {
+    AnalyseChimique,         // Pour les collecteurs récupérant de l'énergie
+    Forage,                  // Pour les collecteurs récupérant des minerais
+    ImagerieHauteResolution, // Pour les explorateurs
+}
+
+// ============================
 // Définition et comportement des robots
 // ============================
 #[derive(Debug)]
@@ -96,7 +106,6 @@ enum RoleRobot {
     Collecteur,
 }
 
-// Le composant Robot contient désormais un ensemble `visited` pour optimiser l'exploration.
 #[derive(Component)]
 struct Robot {
     x: isize,
@@ -111,6 +120,8 @@ struct Robot {
     cible: Option<(isize, isize)>,
     /// Pour les explorateurs : ensemble des cases déjà visitées
     visited: HashSet<(isize, isize)>,
+    /// Liste des modules spécialisés installés sur le robot
+    modules: Vec<ModuleRobot>,
 }
 
 // Ressource pour gérer la fréquence de déplacement des robots via un Timer
@@ -250,10 +261,8 @@ fn creer_robots(
         return;
     }
 
+    // Création des explorateurs spécialisés en imagerie haute résolution
     let nb_explorateurs = 3;
-    let nb_collecteurs = 1;
-
-    // Création des explorateurs avec un ensemble vide pour "visited"
     for _ in 0..nb_explorateurs {
         let translation = Vec3::new(
             station.x as f32 * TAILLE_CASE - (LARGEUR_CARTE as f32 * TAILLE_CASE) / 2.0,
@@ -263,7 +272,7 @@ fn creer_robots(
         commandes.spawn((
             SpriteBundle {
                 sprite: Sprite {
-                    color: Color::rgb(0.0, 1.0, 0.0), // Vert
+                    color: Color::rgb(0.0, 1.0, 0.0), // Vert pour les explorateurs
                     custom_size: Some(Vec2::splat(TAILLE_CASE)),
                     ..Default::default()
                 },
@@ -279,12 +288,19 @@ fn creer_robots(
                 cargo: None,
                 cible: None,
                 visited: HashSet::new(),
+                // Spécialisation uniquement en imagerie haute résolution
+                modules: vec![ModuleRobot::ImagerieHauteResolution],
             },
         ));
     }
 
-    // Création des collecteurs
-    for _ in 0..nb_collecteurs {
+    // Création des collecteurs spécialisés :
+    // - Un collecteur spécialisé en analyse chimique (pour récupérer uniquement l'énergie)
+    // - Un collecteur spécialisé en forage (pour récupérer uniquement les minerais)
+    let nb_collecteurs_analyse = 1;
+    let nb_collecteurs_forage = 1;
+
+    for _ in 0..nb_collecteurs_analyse {
         let translation = Vec3::new(
             station.x as f32 * TAILLE_CASE - (LARGEUR_CARTE as f32 * TAILLE_CASE) / 2.0,
             station.y as f32 * TAILLE_CASE - (HAUTEUR_CARTE as f32 * TAILLE_CASE) / 2.0,
@@ -293,7 +309,7 @@ fn creer_robots(
         commandes.spawn((
             SpriteBundle {
                 sprite: Sprite {
-                    color: Color::rgb(0.0, 0.0, 1.0), // Bleu
+                    color: Color::rgb(0.0, 0.5, 1.0), // Couleur pour distinguer ce type
                     custom_size: Some(Vec2::splat(TAILLE_CASE)),
                     ..Default::default()
                 },
@@ -308,7 +324,40 @@ fn creer_robots(
                 decouvertes: Vec::new(),
                 cargo: None,
                 cible: None,
-                visited: HashSet::new(), // Champ inutilisé pour les collecteurs
+                visited: HashSet::new(),
+                // Spécialisé en analyse chimique => collecte uniquement l'énergie
+                modules: vec![ModuleRobot::AnalyseChimique],
+            },
+        ));
+    }
+
+    for _ in 0..nb_collecteurs_forage {
+        let translation = Vec3::new(
+            station.x as f32 * TAILLE_CASE - (LARGEUR_CARTE as f32 * TAILLE_CASE) / 2.0,
+            station.y as f32 * TAILLE_CASE - (HAUTEUR_CARTE as f32 * TAILLE_CASE) / 2.0,
+            1.0,
+        );
+        commandes.spawn((
+            SpriteBundle {
+                sprite: Sprite {
+                    color: Color::rgb(0.5, 0.0, 1.0), // Couleur pour distinguer ce type
+                    custom_size: Some(Vec2::splat(TAILLE_CASE)),
+                    ..Default::default()
+                },
+                transform: Transform::from_translation(translation),
+                ..Default::default()
+            },
+            Robot {
+                x: station.x as isize,
+                y: station.y as isize,
+                etat: EtatRobot::Explorer,
+                role: RoleRobot::Collecteur,
+                decouvertes: Vec::new(),
+                cargo: None,
+                cible: None,
+                visited: HashSet::new(),
+                // Spécialisé en forage => collecte uniquement les minerais
+                modules: vec![ModuleRobot::Forage],
             },
         ));
     }
@@ -335,13 +384,11 @@ fn deplacer_robots(
         match robot.role {
             RoleRobot::Explorateur => {
                 match robot.etat {
-                    // Mode exploration optimisé : le robot privilégie les cases non visitées
+                    // Mode exploration : privilégie les cases non visitées
                     EtatRobot::Explorer => {
-                        // Extraire la position actuelle dans une variable temporaire pour éviter le conflit d'emprunt
                         let current_position = (robot.x, robot.y);
                         robot.visited.insert(current_position);
 
-                        // Construire la liste des cases voisines accessibles
                         let possible_moves: Vec<(isize, isize)> = directions.iter()
                             .map(|(dx, dy)| (robot.x + dx, robot.y + dy))
                             .filter(|(nx, ny)| {
@@ -353,14 +400,12 @@ fn deplacer_robots(
                             })
                             .collect();
 
-                        // Parmi les cases accessibles, sélectionner celles non encore visitées
                         let unvisited_moves: Vec<(isize, isize)> = possible_moves
                             .iter()
                             .cloned()
                             .filter(|pos| !robot.visited.contains(pos))
                             .collect();
 
-                        // Choisir une case : prioriser les non visitées, sinon choisir une accessible
                         let (new_x, new_y) = if !unvisited_moves.is_empty() {
                             unvisited_moves[rng.gen_range(0..unvisited_moves.len())]
                         } else if !possible_moves.is_empty() {
@@ -374,7 +419,7 @@ fn deplacer_robots(
                         transform.translation.x = new_x as f32 * TAILLE_CASE - (carte.largeur as f32 * TAILLE_CASE) / 2.0;
                         transform.translation.y = new_y as f32 * TAILLE_CASE - (carte.hauteur as f32 * TAILLE_CASE) / 2.0;
 
-                        // Si la case contient une ressource (énergie ou minerai)
+                        // Les explorateurs détectent toutes les ressources
                         if new_x >= 0 && new_y >= 0 && new_x < carte.largeur as isize && new_y < carte.hauteur as isize {
                             let tuile = carte.donnees[new_y as usize][new_x as usize];
                             if tuile == TypePixel::Energie || tuile == TypePixel::Minerai {
@@ -389,7 +434,6 @@ fn deplacer_robots(
                             }
                         }
                     },
-                    // Mode retour à la station pour enregistrer les découvertes
                     EtatRobot::Retourner => {
                         let cible_x = station.x as isize;
                         let cible_y = station.y as isize;
@@ -418,15 +462,24 @@ fn deplacer_robots(
             RoleRobot::Collecteur => {
                 match robot.etat {
                     EtatRobot::Explorer => {
+                        // Définir la ressource cible selon la spécialisation du collecteur
+                        let resource_filter = if robot.modules.contains(&ModuleRobot::AnalyseChimique) {
+                            TypePixel::Energie
+                        } else if robot.modules.contains(&ModuleRobot::Forage) {
+                            TypePixel::Minerai
+                        } else {
+                            TypePixel::Vide
+                        };
+
                         if robot.x == station.x as isize && robot.y == station.y as isize {
                             if robot.cible.is_none() {
                                 if let Some(index) = depot.decouvertes.iter().position(|d|
-                                    (d.resource == TypePixel::Energie || d.resource == TypePixel::Minerai) &&
+                                    d.resource == resource_filter &&
                                         carte.donnees[d.y as usize][d.x as usize] == d.resource
                                 ) {
                                     let decouverte = depot.decouvertes.remove(index);
                                     robot.cible = Some((decouverte.x, decouverte.y));
-                                    println!("Collecteur part avec pour cible ({}, {})", decouverte.x, decouverte.y);
+                                    println!("Collecteur {:?} part avec pour cible ({}, {})", robot.modules, decouverte.x, decouverte.y);
                                 }
                             }
                         }
@@ -441,8 +494,8 @@ fn deplacer_robots(
                             }
                             if robot.x == cible_x && robot.y == cible_y {
                                 let tuile = &mut carte.donnees[cible_y as usize][cible_x as usize];
-                                if *tuile == TypePixel::Energie || *tuile == TypePixel::Minerai {
-                                    println!("Collecteur récupère la ressource {:?} en ({}, {})", *tuile, cible_x, cible_y);
+                                if *tuile == resource_filter {
+                                    println!("Collecteur {:?} récupère la ressource {:?} en ({}, {})", robot.modules, *tuile, cible_x, cible_y);
                                     let resource_type = *tuile;
                                     *tuile = TypePixel::Vide;
                                     robot.cargo = Some((resource_type, cible_x, cible_y));
