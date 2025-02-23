@@ -5,6 +5,15 @@ use std::collections::HashSet;
 use std::env;
 
 // ============================
+// TODO LIST
+// Tenter de mettre des emojis à la place des colors pixel
+// Documentation pour lancement/Seed/Couleurs/ Fonctionnement
+// TODO Comportement de la station
+// Restructurer code
+// Gérer les pixel bloqué
+// ============================
+
+// ============================
 // Paramètres de la carte
 // ============================
 const LARGEUR_CARTE: usize = 50;
