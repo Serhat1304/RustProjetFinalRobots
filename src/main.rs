@@ -37,14 +37,11 @@ struct Pixel {
 // ============================
 // Ressources pour la génération de la carte
 // ============================
-
-// La seed utilisée pour la génération de la carte
 #[derive(Resource)]
 struct SeedCarte {
     seed: u64,
 }
 
-// Structure représentant la carte (grille de pixels)
 #[derive(Resource)]
 struct Carte {
     donnees: Vec<Vec<TypePixel>>,
@@ -65,21 +62,17 @@ impl Carte {
 // ============================
 // Ressources liées à la station
 // ============================
-
-// Position de la station sur la carte
 #[derive(Resource)]
 struct PositionStation {
     x: usize,
     y: usize,
 }
 
-// Dépot de la station qui stocke les découvertes (ressources signalées)
 #[derive(Resource, Debug)]
 struct DepotStation {
     decouvertes: Vec<Decouverte>,
 }
 
-// Structure représentant une découverte (type de ressource et sa position)
 #[derive(Debug, Clone)]
 struct Decouverte {
     resource: TypePixel,
@@ -90,31 +83,30 @@ struct Decouverte {
 // ============================
 // Définition et comportement des robots
 // ============================
-
-// États possibles d'un robot
 #[derive(Debug)]
 enum EtatRobot {
     Explorer,
     Retourner,
 }
 
-// Rôles possibles d'un robot
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum RoleRobot {
     Explorateur,
     Collecteur,
 }
 
-// Composant représentant un robot
-// - Pour les explorateurs, "cargo" stocke la découverte (type et position)
-// - Pour les collecteurs, "cible" contient la position de la ressource à récupérer
+// On modifie le composant Robot pour y ajouter un vecteur de découvertes pour les explorateurs
 #[derive(Component)]
 struct Robot {
     x: isize,
     y: isize,
     etat: EtatRobot,
     role: RoleRobot,
+    /// Pour les explorateurs, stocke les découvertes (jusqu'à 10)
+    decouvertes: Vec<Decouverte>,
+    /// Pour les collecteurs, contient la ressource récupérée (lorsqu’elle est chargée)
     cargo: Option<(TypePixel, isize, isize)>,
+    /// Pour les collecteurs, cible la position d'une ressource à récupérer
     cible: Option<(isize, isize)>,
 }
 
@@ -124,7 +116,7 @@ struct MinuterieRobot {
     timer: Timer,
 }
 
-// Indique si les robots ont déjà été créés (pour éviter de les spawn plusieurs fois)
+// Indique si les robots ont déjà été créés
 #[derive(Resource)]
 struct RobotsCrees(bool);
 
@@ -132,24 +124,19 @@ struct RobotsCrees(bool);
 // Fonction principale (point d'entrée)
 // ============================
 fn main() {
-    // Récupère la seed passée en argument ou en génère une aléatoire
     let seed = obtenir_seed_depuis_arguments().unwrap_or_else(generer_seed_aleatoire);
     println!("Seed utilisée : {}", seed);
 
     App::new()
         .add_plugins(DefaultPlugins)
-        // Pour une génération reproductible de la carte
         .insert_resource(SeedCarte { seed })
-        // Dépôt de la station qui stockera les découvertes
         .insert_resource(DepotStation {
             decouvertes: Vec::new(),
         })
-        // Systèmes de démarrage (startup)
         .add_systems(Startup, initialiser_camera)
         .add_systems(Startup, generer_carte)
         .add_systems(Startup, configurer_minuterie_robot)
         .add_systems(Startup, initialiser_robots_crees)
-        // Systèmes en update
         .add_systems(Update, creer_robots)
         .add_systems(Update, deplacer_robots)
         .add_systems(Update, synchroniser_pixels_carte.after(deplacer_robots))
@@ -159,23 +146,18 @@ fn main() {
 // ============================
 // Systèmes d'initialisation
 // ============================
-
-/// Initialise la caméra 2D
 fn initialiser_camera(mut commandes: Commands) {
     commandes.spawn(Camera2dBundle::default());
 }
 
-/// Génère la carte : obstacles, ressources et positionnement de la station
 fn generer_carte(mut commandes: Commands, seed_carte: Res<SeedCarte>) {
     println!("Seed Actuel: {}", seed_carte.seed);
 
     let bruit_perlin = Perlin::new(seed_carte.seed as u32);
     let mut generateur_aleatoire = StdRng::seed_from_u64(seed_carte.seed);
 
-    // Initialisation de la carte avec des pixels vides
     let mut carte = vec![vec![TypePixel::Vide; LARGEUR_CARTE]; HAUTEUR_CARTE];
 
-    // Génération d'obstacles à l'aide du bruit de Perlin
     for y in 0..HAUTEUR_CARTE {
         for x in 0..LARGEUR_CARTE {
             let valeur_bruit = bruit_perlin.get([x as f64 * 0.1, y as f64 * 0.1]);
@@ -185,28 +167,24 @@ fn generer_carte(mut commandes: Commands, seed_carte: Res<SeedCarte>) {
         }
     }
 
-    // Limitation de la taille des obstacles pour éviter les regroupements trop importants
     limiter_taille_obstacles(&mut carte);
 
-    // Ajout aléatoire de ressources sur les cases vides
     for y in 0..HAUTEUR_CARTE {
         for x in 0..LARGEUR_CARTE {
             if carte[y][x] == TypePixel::Vide {
                 carte[y][x] = match generateur_aleatoire.gen_range(0..100) {
-                    0..=5   => TypePixel::Energie,           // 6% de chance
-                    6..=10  => TypePixel::Minerai,           // 5% de chance
-                    11..=14 => TypePixel::SiteScientifique,    // 4% de chance
+                    0..=5   => TypePixel::Energie,
+                    6..=10  => TypePixel::Minerai,
+                    11..=14 => TypePixel::SiteScientifique,
                     _       => TypePixel::Vide,
                 };
             }
         }
     }
 
-    // Positionnement de la station sur une case vide
     let (pos_x, pos_y) = placer_station(&mut carte, &mut generateur_aleatoire);
     println!("Station placée en ({}, {})", pos_x, pos_y);
 
-    // Sauvegarde de la carte et de la position de la station dans les ressources
     commandes.insert_resource(Carte {
         donnees: carte.clone(),
         largeur: LARGEUR_CARTE,
@@ -214,21 +192,18 @@ fn generer_carte(mut commandes: Commands, seed_carte: Res<SeedCarte>) {
     });
     commandes.insert_resource(PositionStation { x: pos_x, y: pos_y });
 
-    // Création des entités pour l'affichage de chaque case de la carte
     for y in 0..HAUTEUR_CARTE {
         for x in 0..LARGEUR_CARTE {
             let type_pixel = carte[y][x];
-            // Définition de la couleur en fonction du type de pixel
             let couleur = match type_pixel {
-                TypePixel::Obstacle => Color::rgb(0.2, 0.2, 0.2),      // Gris foncé
-                TypePixel::Energie => Color::rgb(1.0, 1.0, 0.0),         // Jaune
-                TypePixel::Minerai => Color::rgb(0.5, 0.3, 0.1),         // Marron
-                TypePixel::SiteScientifique => Color::rgb(0.0, 0.8, 0.8),  // Cyan
-                TypePixel::Station => Color::rgb(1.0, 0.0, 0.0),         // Rouge
-                TypePixel::Vide => Color::rgb(0.8, 0.8, 0.8),            // Gris clair
+                TypePixel::Obstacle => Color::rgb(0.2, 0.2, 0.2),
+                TypePixel::Energie => Color::rgb(1.0, 1.0, 0.0),
+                TypePixel::Minerai => Color::rgb(0.5, 0.3, 0.1),
+                TypePixel::SiteScientifique => Color::rgb(0.0, 0.8, 0.8),
+                TypePixel::Station => Color::rgb(1.0, 0.0, 0.0),
+                TypePixel::Vide => Color::rgb(0.8, 0.8, 0.8),
             };
 
-            // Calcul de la position à l'écran
             let translation = Vec3::new(
                 x as f32 * TAILLE_CASE - (LARGEUR_CARTE as f32 * TAILLE_CASE) / 2.0,
                 y as f32 * TAILLE_CASE - (HAUTEUR_CARTE as f32 * TAILLE_CASE) / 2.0,
@@ -250,14 +225,12 @@ fn generer_carte(mut commandes: Commands, seed_carte: Res<SeedCarte>) {
     }
 }
 
-/// Configure la minuterie qui régule les déplacements des robots
 fn configurer_minuterie_robot(mut commandes: Commands) {
     commandes.insert_resource(MinuterieRobot {
         timer: Timer::from_seconds(0.9, TimerMode::Repeating),
     });
 }
 
-/// Initialise le flag indiquant que les robots n'ont pas encore été créés
 fn initialiser_robots_crees(mut commandes: Commands) {
     commandes.insert_resource(RobotsCrees(false));
 }
@@ -265,14 +238,11 @@ fn initialiser_robots_crees(mut commandes: Commands) {
 // ============================
 // Création et déplacement des robots
 // ============================
-
-/// Crée les robots sur la carte : 1 explorateur (en vert) et 1 collecteur (en bleu)
 fn creer_robots(
     mut commandes: Commands,
     station: Res<PositionStation>,
     mut robots_crees: ResMut<RobotsCrees>,
 ) {
-    // Si les robots ont déjà été créés, on ne fait rien
     if robots_crees.0 {
         return;
     }
@@ -280,7 +250,7 @@ fn creer_robots(
     let nb_explorateurs = 3;
     let nb_collecteurs = 1;
 
-    // Création de l'explorateur
+    // Création des explorateurs (on initialise le vecteur "decouvertes" vide)
     for _ in 0..nb_explorateurs {
         let translation = Vec3::new(
             station.x as f32 * TAILLE_CASE - (LARGEUR_CARTE as f32 * TAILLE_CASE) / 2.0,
@@ -302,13 +272,14 @@ fn creer_robots(
                 y: station.y as isize,
                 etat: EtatRobot::Explorer,
                 role: RoleRobot::Explorateur,
+                decouvertes: Vec::new(),
                 cargo: None,
                 cible: None,
             },
         ));
     }
 
-    // Création du collecteur
+    // Création des collecteurs
     for _ in 0..nb_collecteurs {
         let translation = Vec3::new(
             station.x as f32 * TAILLE_CASE - (LARGEUR_CARTE as f32 * TAILLE_CASE) / 2.0,
@@ -330,6 +301,7 @@ fn creer_robots(
                 y: station.y as isize,
                 etat: EtatRobot::Explorer,
                 role: RoleRobot::Collecteur,
+                decouvertes: Vec::new(), // non utilisé pour les collecteurs
                 cargo: None,
                 cible: None,
             },
@@ -339,7 +311,6 @@ fn creer_robots(
     robots_crees.0 = true;
 }
 
-/// Système qui gère le déplacement des robots et le transport des ressources
 fn deplacer_robots(
     mut minuterie: ResMut<MinuterieRobot>,
     time: Res<Time>,
@@ -348,26 +319,18 @@ fn deplacer_robots(
     station: Res<PositionStation>,
     mut depot: ResMut<DepotStation>,
 ) {
-    // On n'exécute le système que lorsque le timer est terminé
     if !minuterie.timer.tick(time.delta()).finished() {
         return;
     }
 
     let mut rng = rand::thread_rng();
-    // Directions possibles : haut, bas, droite, gauche
-    let directions = [
-        (0, 1),
-        (0, -1),
-        (1, 0),
-        (-1, 0),
-    ];
+    let directions = [(0, 1), (0, -1), (1, 0), (-1, 0)];
 
-    // Pour chaque robot...
     for (_entity, mut robot, mut transform) in query.iter_mut() {
         match robot.role {
             RoleRobot::Explorateur => {
                 match robot.etat {
-                    // L'explorateur se déplace de manière aléatoire
+                    // Mode exploration : déplacement aléatoire et accumulation de découvertes
                     EtatRobot::Explorer => {
                         let (dx, dy) = directions[rng.gen_range(0..directions.len())];
                         let nouvelle_x = robot.x + dx;
@@ -379,37 +342,36 @@ fn deplacer_robots(
                             transform.translation.x = nouvelle_x as f32 * TAILLE_CASE - (carte.largeur as f32 * TAILLE_CASE) / 2.0;
                             transform.translation.y = nouvelle_y as f32 * TAILLE_CASE - (carte.hauteur as f32 * TAILLE_CASE) / 2.0;
 
-                            // Si le robot se trouve sur une case contenant une ressource
+                            // Si la case contient une ressource (énergie ou minerai)
                             if nouvelle_x >= 0 && nouvelle_y >= 0 && nouvelle_x < carte.largeur as isize && nouvelle_y < carte.hauteur as isize {
                                 let tuile = carte.donnees[nouvelle_y as usize][nouvelle_x as usize];
-                                // Pour l'énergie et le minerai, on enregistre la découverte sans retirer la ressource
-                                if (tuile == TypePixel::Energie || tuile == TypePixel::Minerai) && robot.cargo.is_none() {
-                                    println!("Explorateur détecte la ressource {:?} en ({}, {})", tuile, nouvelle_x, nouvelle_y);
-                                    robot.cargo = Some((tuile, nouvelle_x, nouvelle_y));
-                                    robot.etat = EtatRobot::Retourner;
+                                if (tuile == TypePixel::Energie || tuile == TypePixel::Minerai) {
+                                    // Ajoute la découverte si elle n'a pas déjà été enregistrée par ce robot
+                                    let deja_trouve = robot.decouvertes.iter().any(|d| d.x == nouvelle_x && d.y == nouvelle_y);
+                                    if !deja_trouve {
+                                        println!("Explorateur détecte la ressource {:?} en ({}, {})", tuile, nouvelle_x, nouvelle_y);
+                                        robot.decouvertes.push(Decouverte { resource: tuile, x: nouvelle_x, y: nouvelle_y });
+                                        if robot.decouvertes.len() >= 10 {
+                                            robot.etat = EtatRobot::Retourner;
+                                        }
+                                    }
                                 }
                             }
                         }
                     },
-                    // L'explorateur retourne à la station pour "commiter" sa découverte
+                    // Mode retour : le robot se dirige vers la station pour "commiter" ses découvertes
                     EtatRobot::Retourner => {
                         let cible_x = station.x as isize;
                         let cible_y = station.y as isize;
                         if robot.x == cible_x && robot.y == cible_y {
-                            if let Some((resource, res_x, res_y)) = robot.cargo.take() {
-                                // Pour l'énergie et le minerai, on enregistre la découverte dans le dépôt
-                                if resource == TypePixel::Energie || resource == TypePixel::Minerai {
-                                    let decouverte = Decouverte {
-                                        resource,
-                                        x: res_x,
-                                        y: res_y,
-                                    };
-                                    enregistrer_decouverte(&mut depot, decouverte);
+                            for decouverte in &robot.decouvertes {
+                                if decouverte.resource == TypePixel::Energie || decouverte.resource == TypePixel::Minerai {
+                                    enregistrer_decouverte(&mut depot, decouverte.clone());
                                 }
                             }
+                            robot.decouvertes.clear();
                             robot.etat = EtatRobot::Explorer;
                         } else {
-                            // Déplacement simple vers la station
                             let dx = if cible_x > robot.x { 1 } else if cible_x < robot.x { -1 } else { 0 };
                             let dy = if cible_y > robot.y { 1 } else if cible_y < robot.y { -1 } else { 0 };
                             if dx != 0 && !carte.est_obstacle(robot.x + dx, robot.y) {
@@ -425,21 +387,20 @@ fn deplacer_robots(
             },
             RoleRobot::Collecteur => {
                 match robot.etat {
-                    // Le collecteur reste à la station tant qu'il n'a pas de cible
                     EtatRobot::Explorer => {
+                        // Si le collecteur est à la station et n'a pas de cible, on lui assigne une ressource en retirant la découverte du dépôt
                         if robot.x == station.x as isize && robot.y == station.y as isize {
                             if robot.cible.is_none() {
-                                // Recherche d'une découverte (énergie ou minerai) dans le dépôt
-                                if let Some(decouverte) = depot.decouvertes.iter().find(|d|
+                                if let Some(index) = depot.decouvertes.iter().position(|d|
                                     (d.resource == TypePixel::Energie || d.resource == TypePixel::Minerai) &&
                                         carte.donnees[d.y as usize][d.x as usize] == d.resource
                                 ) {
+                                    let decouverte = depot.decouvertes.remove(index);
                                     robot.cible = Some((decouverte.x, decouverte.y));
                                     println!("Collecteur part avec pour cible ({}, {})", decouverte.x, decouverte.y);
                                 }
                             }
                         }
-                        // Si une cible est assignée, déplacement déterministe vers celle-ci
                         if let Some((cible_x, cible_y)) = robot.cible {
                             let step_dx = if cible_x > robot.x { 1 } else if cible_x < robot.x { -1 } else { 0 };
                             let step_dy = if cible_y > robot.y { 1 } else if cible_y < robot.y { -1 } else { 0 };
@@ -449,7 +410,6 @@ fn deplacer_robots(
                                 transform.translation.x = robot.x as f32 * TAILLE_CASE - (carte.largeur as f32 * TAILLE_CASE) / 2.0;
                                 transform.translation.y = robot.y as f32 * TAILLE_CASE - (carte.hauteur as f32 * TAILLE_CASE) / 2.0;
                             }
-                            // À l'arrivée sur la cible, le collecteur récupère la ressource
                             if robot.x == cible_x && robot.y == cible_y {
                                 let tuile = &mut carte.donnees[cible_y as usize][cible_x as usize];
                                 if *tuile == TypePixel::Energie || *tuile == TypePixel::Minerai {
@@ -460,13 +420,11 @@ fn deplacer_robots(
                                     robot.cible = None;
                                     robot.etat = EtatRobot::Retourner;
                                 } else {
-                                    // Si la ressource a disparu, la cible est annulée
                                     robot.cible = None;
                                 }
                             }
                         }
                     },
-                    // Le collecteur retourne à la station pour déposer la ressource collectée
                     EtatRobot::Retourner => {
                         let cible_x = station.x as isize;
                         let cible_y = station.y as isize;
@@ -493,13 +451,11 @@ fn deplacer_robots(
     }
 }
 
-/// Synchronise les entités affichant les pixels avec les données de la carte
 fn synchroniser_pixels_carte(
     carte: Res<Carte>,
     mut query: Query<(&mut Pixel, &mut Sprite, &Transform)>,
 ) {
     for (mut pixel, mut sprite, transform) in query.iter_mut() {
-        // Recalcule la position de la case à partir du transform
         let tile_x = ((transform.translation.x + (carte.largeur as f32 * TAILLE_CASE) / 2.0) / TAILLE_CASE)
             .round() as usize;
         let tile_y = ((transform.translation.y + (carte.hauteur as f32 * TAILLE_CASE) / 2.0) / TAILLE_CASE)
@@ -524,8 +480,6 @@ fn synchroniser_pixels_carte(
 // ============================
 // Fonctions utilitaires
 // ============================
-
-/// Enregistre une découverte dans le dépôt de la station
 fn enregistrer_decouverte(depot: &mut DepotStation, decouverte: Decouverte) {
     if let Some(existante) = depot.decouvertes.iter().find(|d| d.x == decouverte.x && d.y == decouverte.y) {
         if existante.resource != decouverte.resource {
@@ -545,7 +499,6 @@ fn enregistrer_decouverte(depot: &mut DepotStation, decouverte: Decouverte) {
     }
 }
 
-/// Récupère la seed depuis les arguments (si fournie)
 fn obtenir_seed_depuis_arguments() -> Option<u64> {
     let arguments: Vec<String> = env::args().collect();
     if arguments.len() > 1 {
@@ -555,12 +508,10 @@ fn obtenir_seed_depuis_arguments() -> Option<u64> {
     }
 }
 
-/// Génère une seed aléatoire
 fn generer_seed_aleatoire() -> u64 {
     rand::thread_rng().gen::<u64>()
 }
 
-/// Place la station sur une case vide de la carte
 fn placer_station(
     carte: &mut Vec<Vec<TypePixel>>,
     generateur_aleatoire: &mut StdRng,
@@ -575,7 +526,6 @@ fn placer_station(
     }
 }
 
-/// Limite la taille des obstacles pour éviter des regroupements trop importants
 fn limiter_taille_obstacles(carte: &mut Vec<Vec<TypePixel>>) {
     let directions = [(0, 1), (1, 0), (0, -1), (-1, 0)];
     for y in 0..HAUTEUR_CARTE {
