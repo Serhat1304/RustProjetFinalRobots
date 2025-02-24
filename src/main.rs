@@ -10,7 +10,8 @@ use std::env;
 // Documentation pour lancement/Seed/Couleurs/ Fonctionnement
 // TODO Comportement de la station
 // Restructurer code
-// Gérer les pixel bloqué
+// Gérer les pixel bloqués par des obstacle
+// Faire les tests
 // ============================
 
 // ============================
