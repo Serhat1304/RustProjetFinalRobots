@@ -458,7 +458,7 @@ fn deplacer_robots(
                                         x: new_x,
                                         y: new_y,
                                     });
-                                    // On définit par ex. un seuil de découvertes avant de retourner
+                                    // On définit un seuil de découvertes avant de retourner
                                     if robot.decouvertes.len() >= 2 {
                                         robot.etat = EtatRobot::Retourner;
                                     }
