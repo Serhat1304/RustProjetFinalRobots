@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use noise::{NoiseFn, Perlin};
 use rand::{prelude::*, SeedableRng};
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque, HashMap};
 use std::env;
 
 // ============================
@@ -252,10 +252,9 @@ fn generer_carte(mut commandes: Commands, seed_carte: Res<SeedCarte>) {
     }
 }
 
-
 fn configurer_minuterie_robot(mut commandes: Commands) {
     commandes.insert_resource(MinuterieRobot {
-        timer: Timer::from_seconds(0.9, TimerMode::Repeating),
+        timer: Timer::from_seconds(0.01, TimerMode::Repeating),
     });
 }
 
@@ -398,11 +397,12 @@ fn deplacer_robots(
         match robot.role {
             RoleRobot::Explorateur => {
                 match robot.etat {
-                    // Mode exploration : privilégie les cases non visitées
+                    // Mode exploration : on garde le déplacement aléatoire pour ce rôle
                     EtatRobot::Explorer => {
                         let current_position = (robot.x, robot.y);
                         robot.visited.insert(current_position);
 
+                        // On cherche des mouvements possibles
                         let possible_moves: Vec<(isize, isize)> = directions.iter()
                             .map(|(dx, dy)| (robot.x + dx, robot.y + dy))
                             .filter(|(nx, ny)| {
@@ -414,6 +414,7 @@ fn deplacer_robots(
                             })
                             .collect();
 
+                        // On exclut les déjà visités pour privilégier la découverte
                         let unvisited_moves: Vec<(isize, isize)> = possible_moves
                             .iter()
                             .cloned()
@@ -423,25 +424,41 @@ fn deplacer_robots(
                         let (new_x, new_y) = if !unvisited_moves.is_empty() {
                             unvisited_moves[rng.gen_range(0..unvisited_moves.len())]
                         } else if !possible_moves.is_empty() {
+                            // Sinon, on prend un mouvement possible aléatoire
                             possible_moves[rng.gen_range(0..possible_moves.len())]
                         } else {
+                            // Plus aucune possibilité (entouré d'obstacles ?)
                             (robot.x, robot.y)
                         };
 
                         robot.x = new_x;
                         robot.y = new_y;
-                        transform.translation.x = new_x as f32 * TAILLE_CASE - (carte.largeur as f32 * TAILLE_CASE) / 2.0;
-                        transform.translation.y = new_y as f32 * TAILLE_CASE - (carte.hauteur as f32 * TAILLE_CASE) / 2.0;
+                        transform.translation.x = new_x as f32 * TAILLE_CASE
+                            - (carte.largeur as f32 * TAILLE_CASE) / 2.0;
+                        transform.translation.y = new_y as f32 * TAILLE_CASE
+                            - (carte.hauteur as f32 * TAILLE_CASE) / 2.0;
 
-                        // Les explorateurs détectent toutes les ressources
-                        if new_x >= 0 && new_y >= 0 && new_x < carte.largeur as isize && new_y < carte.hauteur as isize {
+                        // Les explorateurs détectent toutes les ressources qu'ils croisent
+                        if new_x >= 0 && new_y >= 0 &&
+                            new_x < carte.largeur as isize &&
+                            new_y < carte.hauteur as isize
+                        {
                             let tuile = carte.donnees[new_y as usize][new_x as usize];
                             if tuile == TypePixel::Energie || tuile == TypePixel::Minerai {
-                                let deja_trouve = robot.decouvertes.iter().any(|d| d.x == new_x && d.y == new_y);
+                                let deja_trouve = robot.decouvertes
+                                    .iter()
+                                    .any(|d| d.x == new_x && d.y == new_y);
                                 if !deja_trouve {
-                                    println!("Explorateur détecte la ressource {:?} en ({}, {})", tuile, new_x, new_y);
-                                    robot.decouvertes.push(Decouverte { resource: tuile, x: new_x, y: new_y });
-                                    // Définir le nombre de ressources découvertes avant de retrouner à la station
+                                    println!(
+                                        "Explorateur détecte la ressource {:?} en ({}, {})",
+                                        tuile, new_x, new_y
+                                    );
+                                    robot.decouvertes.push(Decouverte {
+                                        resource: tuile,
+                                        x: new_x,
+                                        y: new_y,
+                                    });
+                                    // On définit par ex. un seuil de découvertes avant de retourner
                                     if robot.decouvertes.len() >= 2 {
                                         robot.etat = EtatRobot::Retourner;
                                     }
@@ -450,26 +467,36 @@ fn deplacer_robots(
                         }
                     },
                     EtatRobot::Retourner => {
-                        let cible_x = station.x as isize;
-                        let cible_y = station.y as isize;
-                        if robot.x == cible_x && robot.y == cible_y {
-                            for decouverte in &robot.decouvertes {
-                                if decouverte.resource == TypePixel::Energie || decouverte.resource == TypePixel::Minerai {
-                                    enregistrer_decouverte(&mut depot, decouverte.clone());
+                        let cible = (station.x as isize, station.y as isize);
+                        if robot.x == cible.0 && robot.y == cible.1 {
+                            // Dépôt des découvertes
+                            for dec in &robot.decouvertes {
+                                if dec.resource == TypePixel::Energie
+                                    || dec.resource == TypePixel::Minerai
+                                {
+                                    enregistrer_decouverte(&mut depot, dec.clone());
                                 }
                             }
                             robot.decouvertes.clear();
                             robot.etat = EtatRobot::Explorer;
                         } else {
-                            let dx = if cible_x > robot.x { 1 } else if cible_x < robot.x { -1 } else { 0 };
-                            let dy = if cible_y > robot.y { 1 } else if cible_y < robot.y { -1 } else { 0 };
-                            if dx != 0 && !carte.est_obstacle(robot.x + dx, robot.y) {
-                                robot.x += dx;
-                            } else if dy != 0 && !carte.est_obstacle(robot.x, robot.y + dy) {
-                                robot.y += dy;
+                            // On utilise BFS pour trouver un chemin
+                            if let Some(path) =
+                                calculer_chemin_bfs(&carte, (robot.x, robot.y), cible)
+                            {
+                                // On avance d'une case dans le path
+                                if path.len() > 1 {
+                                    let (nx, ny) = path[1];
+                                    robot.x = nx;
+                                    robot.y = ny;
+                                    transform.translation.x = nx as f32 * TAILLE_CASE
+                                        - (carte.largeur as f32 * TAILLE_CASE) / 2.0;
+                                    transform.translation.y = ny as f32 * TAILLE_CASE
+                                        - (carte.hauteur as f32 * TAILLE_CASE) / 2.0;
+                                }
+                            } else {
+                                println!("Explorateur bloqué/aucun chemin vers la station ");
                             }
-                            transform.translation.x = robot.x as f32 * TAILLE_CASE - (carte.largeur as f32 * TAILLE_CASE) / 2.0;
-                            transform.translation.y = robot.y as f32 * TAILLE_CASE - (carte.hauteur as f32 * TAILLE_CASE) / 2.0;
                         }
                     },
                 }
@@ -477,7 +504,7 @@ fn deplacer_robots(
             RoleRobot::Collecteur => {
                 match robot.etat {
                     EtatRobot::Explorer => {
-                        // Définir la ressource cible selon la spécialisation du collecteur
+                        // Choisir la ressource cible selon la spécialisation
                         let resource_filter = if robot.modules.contains(&ModuleRobot::AnalyseChimique) {
                             TypePixel::Energie
                         } else if robot.modules.contains(&ModuleRobot::Forage) {
@@ -486,60 +513,91 @@ fn deplacer_robots(
                             TypePixel::Vide
                         };
 
+                        // Si le collecteur est sur la station et n'a pas de cible,
+                        // on vérifie si une découverte correspondante est dispo
                         if robot.x == station.x as isize && robot.y == station.y as isize {
                             if robot.cible.is_none() {
+                                // Cherche une découverte correspondante toujours présente sur la carte
                                 if let Some(index) = depot.decouvertes.iter().position(|d|
                                     d.resource == resource_filter &&
                                         carte.donnees[d.y as usize][d.x as usize] == d.resource
                                 ) {
                                     let decouverte = depot.decouvertes.remove(index);
                                     robot.cible = Some((decouverte.x, decouverte.y));
-                                    println!("Collecteur {:?} part avec pour cible ({}, {})", robot.modules, decouverte.x, decouverte.y);
+                                    println!(
+                                        "Collecteur {:?} part avec pour cible ({}, {})",
+                                        robot.modules, decouverte.x, decouverte.y
+                                    );
                                 }
                             }
                         }
-                        if let Some((cible_x, cible_y)) = robot.cible {
-                            let step_dx = if cible_x > robot.x { 1 } else if cible_x < robot.x { -1 } else { 0 };
-                            let step_dy = if cible_y > robot.y { 1 } else if cible_y < robot.y { -1 } else { 0 };
-                            if !carte.est_obstacle(robot.x + step_dx, robot.y + step_dy) {
-                                robot.x += step_dx;
-                                robot.y += step_dy;
-                                transform.translation.x = robot.x as f32 * TAILLE_CASE - (carte.largeur as f32 * TAILLE_CASE) / 2.0;
-                                transform.translation.y = robot.y as f32 * TAILLE_CASE - (carte.hauteur as f32 * TAILLE_CASE) / 2.0;
-                            }
-                            if robot.x == cible_x && robot.y == cible_y {
-                                let tuile = &mut carte.donnees[cible_y as usize][cible_x as usize];
-                                if *tuile == resource_filter {
-                                    println!("Collecteur {:?} récupère la ressource {:?} en ({}, {})", robot.modules, *tuile, cible_x, cible_y);
-                                    let resource_type = *tuile;
-                                    *tuile = TypePixel::Vide;
-                                    robot.cargo = Some((resource_type, cible_x, cible_y));
-                                    robot.cible = None;
-                                    robot.etat = EtatRobot::Retourner;
-                                } else {
-                                    robot.cible = None;
+
+                        // Si on a une cible (x,y), on essaie d'y aller en BFS
+                        if let Some((cx, cy)) = robot.cible {
+                            if let Some(path) = calculer_chemin_bfs(&carte, (robot.x, robot.y), (cx, cy)) {
+                                if path.len() > 1 {
+                                    let (nx, ny) = path[1];
+                                    robot.x = nx;
+                                    robot.y = ny;
+                                    transform.translation.x = nx as f32 * TAILLE_CASE
+                                        - (carte.largeur as f32 * TAILLE_CASE) / 2.0;
+                                    transform.translation.y = ny as f32 * TAILLE_CASE
+                                        - (carte.hauteur as f32 * TAILLE_CASE) / 2.0;
                                 }
+                                // Si on est arrivé sur la case cible, on tente la récolte
+                                if robot.x == cx && robot.y == cy {
+                                    let tuile = &mut carte.donnees[cy as usize][cx as usize];
+                                    if *tuile == resource_filter {
+                                        println!(
+                                            "Collecteur {:?} récupère la ressource {:?} en ({}, {})",
+                                            robot.modules, *tuile, cx, cy
+                                        );
+                                        let resource_type = *tuile;
+                                        *tuile = TypePixel::Vide;
+                                        robot.cargo = Some((resource_type, cx, cy));
+                                        robot.cible = None;
+                                        // On passe en mode Retourner
+                                        robot.etat = EtatRobot::Retourner;
+                                    } else {
+                                        // La ressource n'est plus là
+                                        robot.cible = None;
+                                    }
+                                }
+                            } else {
+                                println!(
+                                    "Collecteur ne peut accéder à ({}, {}) : blocage. Ressource abandonnée.",
+                                    cx, cy
+                                );
+                                robot.cible = None; // On abandonne cette cible
                             }
                         }
                     },
                     EtatRobot::Retourner => {
-                        let cible_x = station.x as isize;
-                        let cible_y = station.y as isize;
-                        if robot.x == cible_x && robot.y == cible_y {
+                        let cible = (station.x as isize, station.y as isize);
+                        if robot.x == cible.0 && robot.y == cible.1 {
+                            // Dépôt de la ressource si cargo plein
                             if let Some((resource, res_x, res_y)) = robot.cargo.take() {
-                                println!("Collecteur dépose la ressource {:?} collectée de ({}, {}) à la station", resource, res_x, res_y);
+                                println!(
+                                    "Collecteur dépose la ressource {:?} collectée de ({}, {}) à la station",
+                                    resource, res_x, res_y
+                                );
                             }
                             robot.etat = EtatRobot::Explorer;
                         } else {
-                            let dx = if cible_x > robot.x { 1 } else if cible_x < robot.x { -1 } else { 0 };
-                            let dy = if cible_y > robot.y { 1 } else if cible_y < robot.y { -1 } else { 0 };
-                            if dx != 0 && !carte.est_obstacle(robot.x + dx, robot.y) {
-                                robot.x += dx;
-                            } else if dy != 0 && !carte.est_obstacle(robot.x, robot.y + dy) {
-                                robot.y += dy;
+                            // On calcule un chemin BFS vers la station
+                            if let Some(path) = calculer_chemin_bfs(&carte, (robot.x, robot.y), cible) {
+                                if path.len() > 1 {
+                                    let (nx, ny) = path[1];
+                                    robot.x = nx;
+                                    robot.y = ny;
+                                    transform.translation.x = nx as f32 * TAILLE_CASE
+                                        - (carte.largeur as f32 * TAILLE_CASE) / 2.0;
+                                    transform.translation.y = ny as f32 * TAILLE_CASE
+                                        - (carte.hauteur as f32 * TAILLE_CASE) / 2.0;
+                                }
+                            } else {
+                                println!("Collecteur bloqué : aucun chemin vers la station !");
                             }
-                            transform.translation.x = robot.x as f32 * TAILLE_CASE - (carte.largeur as f32 * TAILLE_CASE) / 2.0;
-                            transform.translation.y = robot.y as f32 * TAILLE_CASE - (carte.hauteur as f32 * TAILLE_CASE) / 2.0;
                         }
                     },
                 }
@@ -553,9 +611,11 @@ fn synchroniser_pixels_carte(
     mut query: Query<(&mut Pixel, &mut Sprite, &Transform)>,
 ) {
     for (mut pixel, mut sprite, transform) in query.iter_mut() {
-        let tile_x = ((transform.translation.x + (carte.largeur as f32 * TAILLE_CASE) / 2.0) / TAILLE_CASE)
+        let tile_x = ((transform.translation.x + (carte.largeur as f32 * TAILLE_CASE) / 2.0)
+            / TAILLE_CASE)
             .round() as usize;
-        let tile_y = ((transform.translation.y + (carte.hauteur as f32 * TAILLE_CASE) / 2.0) / TAILLE_CASE)
+        let tile_y = ((transform.translation.y + (carte.hauteur as f32 * TAILLE_CASE) / 2.0)
+            / TAILLE_CASE)
             .round() as usize;
         if tile_x < carte.largeur && tile_y < carte.hauteur {
             let nouveau_type = carte.donnees[tile_y][tile_x];
@@ -578,7 +638,10 @@ fn synchroniser_pixels_carte(
 // Fonctions utilitaires
 // ============================
 fn enregistrer_decouverte(depot: &mut DepotStation, decouverte: Decouverte) {
-    if let Some(existante) = depot.decouvertes.iter().find(|d| d.x == decouverte.x && d.y == decouverte.y) {
+    if let Some(existante) = depot.decouvertes
+        .iter()
+        .find(|d| d.x == decouverte.x && d.y == decouverte.y)
+    {
         if existante.resource != decouverte.resource {
             println!(
                 "Conflit détecté pour la ressource en ({}, {}): {:?} vs {:?}",
@@ -649,4 +712,62 @@ fn limiter_taille_obstacles(carte: &mut Vec<Vec<TypePixel>>) {
             }
         }
     }
+}
+
+// ============================
+// BFS pour éviter le blocage
+// ============================
+
+/// Calcule un chemin de start à goal via BFS.
+/// Retourne None si aucun chemin n'existe.
+/// Retourne Some(Vec<(x, y)>) si un chemin a été trouvé (y compris start->goal).
+fn calculer_chemin_bfs(
+    carte: &Carte,
+    start: (isize, isize),
+    goal: (isize, isize),
+) -> Option<Vec<(isize, isize)>> {
+    if start == goal {
+        return Some(vec![start]);
+    }
+    // Si départ ou arrivée est obstacle, on abandonne
+    if carte.est_obstacle(start.0, start.1) || carte.est_obstacle(goal.0, goal.1) {
+        return None;
+    }
+
+    let mut visited = HashSet::new();
+    let mut queue = VecDeque::new();
+    let mut came_from = HashMap::new();
+
+    visited.insert(start);
+    queue.push_back(start);
+
+    let directions = [(0, 1), (0, -1), (1, 0), (-1, 0)];
+
+    while let Some(current) = queue.pop_front() {
+        for (dx, dy) in directions.iter() {
+            let nx = current.0 + dx;
+            let ny = current.1 + dy;
+            // Vérifier si la case est valide et non encore visitée
+            if !carte.est_obstacle(nx, ny) && !visited.contains(&(nx, ny)) {
+                visited.insert((nx, ny));
+                came_from.insert((nx, ny), current);
+                queue.push_back((nx, ny));
+
+                if (nx, ny) == goal {
+                    // On a trouvé l'arrivée => on reconstitue le chemin
+                    let mut path = vec![(nx, ny)];
+                    let mut current_back = (nx, ny);
+                    while current_back != start {
+                        current_back = came_from[&current_back];
+                        path.push(current_back);
+                    }
+                    path.reverse();
+                    return Some(path);
+                }
+            }
+        }
+    }
+
+    // Aucun chemin trouvé
+    None
 }
