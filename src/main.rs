@@ -275,7 +275,7 @@ fn creer_robots(
     }
 
     // Création des explorateurs spécialisés en imagerie haute résolution
-    let nb_explorateurs = 3;
+    let nb_explorateurs = 5;
     for _ in 0..nb_explorateurs {
         let translation = Vec3::new(
             station.x as f32 * TAILLE_CASE - (LARGEUR_CARTE as f32 * TAILLE_CASE) / 2.0,
@@ -310,8 +310,8 @@ fn creer_robots(
     // Création des collecteurs spécialisés :
     // - Un collecteur spécialisé en analyse chimique (pour récupérer uniquement l'énergie)
     // - Un collecteur spécialisé en forage (pour récupérer uniquement les minerais)
-    let nb_collecteurs_analyse = 1;
-    let nb_collecteurs_forage = 1;
+    let nb_collecteurs_analyse = 3;
+    let nb_collecteurs_forage = 3;
 
     for _ in 0..nb_collecteurs_analyse {
         let translation = Vec3::new(
@@ -561,6 +561,7 @@ fn deplacer_robots(
                                     } else {
                                         // La ressource n'est plus là
                                         robot.cible = None;
+                                        robot.etat = EtatRobot::Retourner;
                                     }
                                 }
                             } else {
@@ -569,6 +570,7 @@ fn deplacer_robots(
                                     cx, cy
                                 );
                                 robot.cible = None; // On abandonne cette cible
+                                robot.etat = EtatRobot::Retourner;
                             }
                         }
                     },
