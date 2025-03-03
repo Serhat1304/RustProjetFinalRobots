@@ -57,7 +57,7 @@ pub fn creer_robots(
     }
 
     // Création de 5 explorateurs spécialisés en imagerie haute résolution
-    let nb_explorateurs = 5;
+    let nb_explorateurs = 3;
     for _ in 0..nb_explorateurs {
         let translation = Vec3::new(
             station.x as f32 * TAILLE_CASE - (LARGEUR_CARTE as f32 * TAILLE_CASE) / 2.0,
@@ -90,8 +90,8 @@ pub fn creer_robots(
     }
 
     // Création des collecteurs spécialisés (3 pour l'analyse chimique et 3 pour le forage)
-    let nb_collecteurs_analyse = 3;
-    let nb_collecteurs_forage = 3;
+    let nb_collecteurs_analyse = 1;
+    let nb_collecteurs_forage = 1;
 
     for _ in 0..nb_collecteurs_analyse {
         let translation = Vec3::new(
