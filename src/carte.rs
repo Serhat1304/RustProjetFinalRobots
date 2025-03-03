@@ -1,3 +1,5 @@
+// src/carte.rs
+
 use bevy::prelude::*;
 use noise::{NoiseFn, Perlin};
 use rand::{prelude::*, SeedableRng};
@@ -36,7 +38,8 @@ pub struct SeedCarte {
 }
 
 /// Ressource représentant la carte avec ses données, largeur et hauteur.
-#[derive(Resource)]
+/// Le derive Clone est utile pour le partage ou le clonage lors des calculs asynchrones.
+#[derive(Resource, Clone)]
 pub struct Carte {
     pub donnees: Vec<Vec<TypePixel>>,
     pub largeur: usize,
@@ -53,7 +56,7 @@ impl Carte {
     }
 }
 
-/// Ressource contenant la position de la station.
+/// Ressource contenant la position de la station sur la carte.
 #[derive(Resource)]
 pub struct PositionStation {
     pub x: usize,
@@ -76,9 +79,14 @@ pub struct Decouverte {
     pub y: isize,
 }
 
-/// Fonction de génération de la carte.
-/// Elle crée une grille avec des obstacles, des ressources et place la station.
-/// Ensuite, elle crée les sprites en fonction du type de pixel, avec un code couleur spécifique.
+/// Génère la carte en créant une grille avec des obstacles et des ressources, puis place la station.
+/// Les sprites sont créés avec le code couleur suivant :
+/// - Obstacle          -> gris foncé (0.2, 0.2, 0.2)
+/// - Energie           -> jaune (1.0, 1.0, 0.0)
+/// - Minerai           -> marron (0.5, 0.3, 0.1)
+/// - SiteScientifique  -> cyan (0.0, 0.8, 0.8)
+/// - Station           -> rouge (1.0, 0.0, 0.0)
+/// - Vide              -> gris clair (0.8, 0.8, 0.8)
 pub fn generer_carte(mut commandes: Commands, seed_carte: Res<SeedCarte>) {
     println!("Seed Actuel: {}", seed_carte.seed);
 
@@ -88,7 +96,7 @@ pub fn generer_carte(mut commandes: Commands, seed_carte: Res<SeedCarte>) {
     // Initialisation de la carte avec des cases vides
     let mut carte = vec![vec![TypePixel::Vide; LARGEUR_CARTE]; HAUTEUR_CARTE];
 
-    // Remplissage de la carte avec des obstacles en fonction du bruit de Perlin
+    // Placement des obstacles en fonction du bruit de Perlin
     for y in 0..HAUTEUR_CARTE {
         for x in 0..LARGEUR_CARTE {
             let valeur_bruit = bruit_perlin.get([x as f64 * 0.1, y as f64 * 0.1]);
@@ -98,10 +106,9 @@ pub fn generer_carte(mut commandes: Commands, seed_carte: Res<SeedCarte>) {
         }
     }
 
-    // Limitation de la taille des obstacles pour éviter des blocs trop grands
     limiter_taille_obstacles(&mut carte);
 
-    // Ajout aléatoire de ressources et sites scientifiques dans les cases vides
+    // Ajout aléatoire de ressources ou sites scientifiques dans les cases vides
     for y in 0..HAUTEUR_CARTE {
         for x in 0..LARGEUR_CARTE {
             if carte[y][x] == TypePixel::Vide {
@@ -119,7 +126,6 @@ pub fn generer_carte(mut commandes: Commands, seed_carte: Res<SeedCarte>) {
     let (pos_x, pos_y) = placer_station(&mut carte, &mut generateur_aleatoire);
     println!("Station placée en ({}, {})", pos_x, pos_y);
 
-    // Insertion des ressources de la carte et de la position de la station dans Bevy
     commandes.insert_resource(Carte {
         donnees: carte.clone(),
         largeur: LARGEUR_CARTE,
@@ -127,14 +133,7 @@ pub fn generer_carte(mut commandes: Commands, seed_carte: Res<SeedCarte>) {
     });
     commandes.insert_resource(PositionStation { x: pos_x, y: pos_y });
 
-    // Création des sprites pour chaque case de la carte.
-    // --- Code couleurs des pixels ---
-    // Obstacle          -> gris foncé (0.2, 0.2, 0.2)
-    // Energie           -> jaune (1.0, 1.0, 0.0)
-    // Minerai           -> marron (0.5, 0.3, 0.1)
-    // SiteScientifique  -> cyan (0.0, 0.8, 0.8)
-    // Station           -> rouge (1.0, 0.0, 0.0)
-    // Vide              -> gris clair (0.8, 0.8, 0.8)
+    // Création des sprites pour chaque case en appliquant le code couleur
     for y in 0..HAUTEUR_CARTE {
         for x in 0..LARGEUR_CARTE {
             let type_pixel = carte[y][x];
@@ -146,7 +145,6 @@ pub fn generer_carte(mut commandes: Commands, seed_carte: Res<SeedCarte>) {
                 TypePixel::Station => Color::rgb(1.0, 0.0, 0.0),
                 TypePixel::Vide => Color::rgb(0.8, 0.8, 0.8),
             };
-            // La station est affichée avec une coordonnée z plus élevée pour la rendre visible
             let z_coord = if type_pixel == TypePixel::Station { 2.0 } else { 0.0 };
 
             let translation = Vec3::new(
@@ -169,7 +167,7 @@ pub fn generer_carte(mut commandes: Commands, seed_carte: Res<SeedCarte>) {
     }
 }
 
-/// Place la station sur une case vide de la carte et retourne ses coordonnées.
+/// Place la station sur une case vide et retourne ses coordonnées.
 fn placer_station(carte: &mut Vec<Vec<TypePixel>>, generateur_aleatoire: &mut rand::rngs::StdRng) -> (usize, usize) {
     loop {
         let x = generateur_aleatoire.gen_range(0..LARGEUR_CARTE);
@@ -181,8 +179,7 @@ fn placer_station(carte: &mut Vec<Vec<TypePixel>>, generateur_aleatoire: &mut ra
     }
 }
 
-/// Limite la taille des obstacles en transformant certaines cases en cases vides
-/// si elles font partie d'un groupe trop grand.
+/// Limite la taille des obstacles en transformant certaines cases en cases vides si le groupe est trop grand.
 fn limiter_taille_obstacles(carte: &mut Vec<Vec<TypePixel>>) {
     let directions = [(0, 1), (1, 0), (0, -1), (-1, 0)];
     for y in 0..HAUTEUR_CARTE {
@@ -205,5 +202,29 @@ fn limiter_taille_obstacles(carte: &mut Vec<Vec<TypePixel>>) {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_est_obstacle() {
+        // Création d'une carte 2x2 simple
+        let donnees = vec![
+            vec![TypePixel::Vide, TypePixel::Obstacle],
+            vec![TypePixel::Vide, TypePixel::Vide],
+        ];
+        let carte = Carte {
+            donnees,
+            largeur: 2,
+            hauteur: 2,
+        };
+        assert!(carte.est_obstacle(1, 0));
+        assert!(!carte.est_obstacle(0, 0));
+        // Test des bornes
+        assert!(carte.est_obstacle(-1, 0));
+        assert!(carte.est_obstacle(0, 2));
     }
 }

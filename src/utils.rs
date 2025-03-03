@@ -1,3 +1,5 @@
+// src/utils.rs
+
 use bevy::prelude::*;
 use noise::Perlin;
 use rand::{prelude::*, SeedableRng};
@@ -7,7 +9,7 @@ use crate::carte::Decouverte;
 use crate::carte::DepotStation;
 
 /// Calcule un chemin entre deux points sur la carte en utilisant l'algorithme BFS.
-/// Retourne Some(chemin) si un chemin existe ou None sinon.
+/// Retourne Some(chemin) si un chemin est trouvé, ou None sinon.
 pub fn calculer_chemin_bfs(carte: &Carte, depart: (isize, isize), arrivee: (isize, isize)) -> Option<Vec<(isize, isize)>> {
     if depart == arrivee {
         return Some(vec![depart]);
@@ -51,7 +53,7 @@ pub fn calculer_chemin_bfs(carte: &Carte, depart: (isize, isize), arrivee: (isiz
 }
 
 /// Enregistre une découverte dans le dépôt de la station.
-/// Si une découverte existe déjà à la même position, on affiche un message de conflit ou d'existence.
+/// Si une découverte existe déjà à la même position, un message est affiché.
 pub fn enregistrer_decouverte(depot: &mut DepotStation, decouverte: Decouverte) {
     if let Some(existante) = depot.decouvertes.iter().find(|d| d.x == decouverte.x && d.y == decouverte.y) {
         if existante.resource != decouverte.resource {
@@ -78,4 +80,73 @@ pub fn obtenir_seed_depuis_arguments() -> Option<u64> {
 /// Génère un seed aléatoire.
 pub fn generer_seed_aleatoire() -> u64 {
     rand::thread_rng().gen::<u64>()
+}
+
+/// Énumération des événements pour l'event sourcing.
+#[derive(Debug)]
+pub enum Evenement {
+    RobotDeplace { robot_id: u32, from: (isize, isize), to: (isize, isize) },
+    RessourceCollectee { robot_id: u32, resource: TypePixel, position: (isize, isize) },
+    NouveauRobotCree { robot_role: crate::robot::RoleRobot, modules: Vec<crate::robot::ModuleRobot> },
+}
+
+/// Ressource contenant la liste des événements enregistrés.
+#[derive(Resource, Default)]
+pub struct Evenements {
+    pub events: Vec<Evenement>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::carte::Carte;
+    use crate::carte::TypePixel;
+
+    #[test]
+    fn test_calculer_chemin_bfs_simple() {
+        // Création d'une carte 3x3 sans obstacles
+        let donnees = vec![
+            vec![TypePixel::Vide; 3],
+            vec![TypePixel::Vide; 3],
+            vec![TypePixel::Vide; 3],
+        ];
+        let carte = Carte { donnees, largeur: 3, hauteur: 3 };
+        let chemin = calculer_chemin_bfs(&carte, (0, 0), (2, 2));
+        assert!(chemin.is_some());
+        let chemin = chemin.unwrap();
+        assert_eq!(chemin.first(), Some(&(0, 0)));
+        assert_eq!(chemin.last(), Some(&(2, 2)));
+    }
+
+    #[test]
+    fn test_calculer_chemin_bfs_obstacle() {
+        // Création d'une carte 3x3 avec obstacles bloquant le chemin direct
+        let donnees = vec![
+            vec![TypePixel::Vide, TypePixel::Obstacle, TypePixel::Vide],
+            vec![TypePixel::Vide, TypePixel::Obstacle, TypePixel::Vide],
+            vec![TypePixel::Vide, TypePixel::Vide, TypePixel::Vide],
+        ];
+        let carte = Carte { donnees, largeur: 3, hauteur: 3 };
+        let chemin = calculer_chemin_bfs(&carte, (0, 0), (2, 2));
+        assert!(chemin.is_some());
+        let chemin = chemin.unwrap();
+        // Vérifier que le chemin ne traverse pas une case avec obstacle
+        for &(x, y) in &chemin {
+            if x == 1 {
+                assert!(carte.donnees[y as usize][x as usize] != TypePixel::Obstacle);
+            }
+        }
+    }
+
+    #[test]
+    fn test_enregistrer_decouverte() {
+        use crate::carte::{DepotStation, Decouverte};
+        let mut depot = DepotStation { decouvertes: Vec::new(), stock_energie: 0, stock_minerai: 0 };
+        let decouverte = Decouverte { resource: TypePixel::Energie, x: 1, y: 1 };
+        enregistrer_decouverte(&mut depot, decouverte.clone());
+        assert_eq!(depot.decouvertes.len(), 1);
+        // Ajouter une découverte identique ne doit pas augmenter le nombre
+        enregistrer_decouverte(&mut depot, decouverte);
+        assert_eq!(depot.decouvertes.len(), 1);
+    }
 }

@@ -1,25 +1,29 @@
+// src/robot.rs
+
 use bevy::prelude::*;
+use bevy::tasks::AsyncComputeTaskPool;
+use futures_lite::future;
 use std::collections::HashSet;
 use rand::Rng;
 use crate::carte::{TAILLE_CASE, LARGEUR_CARTE, HAUTEUR_CARTE, Carte, TypePixel, PositionStation, DepotStation, Decouverte};
-use crate::utils::{calculer_chemin_bfs, enregistrer_decouverte};
+use crate::utils::{calculer_chemin_bfs, enregistrer_decouverte, Evenement, Evenements};
 
-/// Enumération des modules spécialisés installés sur les robots.
+/// Modules spécialisés installés sur les robots.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ModuleRobot {
-    AnalyseChimique,         // Pour les collecteurs récupérant l'énergie
-    Forage,                  // Pour les collecteurs récupérant des minerais
+    AnalyseChimique,         // Pour collecter l'énergie
+    Forage,                  // Pour collecter les minerais
     ImagerieHauteResolution, // Pour les explorateurs
 }
 
-/// État d'un robot (en exploration ou en train de retourner à la station).
+/// État d'un robot : en exploration ou en train de retourner à la station.
 #[derive(Debug)]
 pub enum EtatRobot {
     Explorer,
     Retourner,
 }
 
-/// Rôle d'un robot (explorateur ou collecteur).
+/// Rôle d'un robot : explorateur ou collecteur.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RoleRobot {
     Explorateur,
@@ -33,30 +37,24 @@ pub struct Robot {
     pub y: isize,
     pub etat: EtatRobot,
     pub role: RoleRobot,
-    /// Stocke les découvertes pour un explorateur
     pub decouvertes: Vec<Decouverte>,
-    /// Stocke la ressource collectée pour un collecteur
     pub cargo: Option<(TypePixel, isize, isize)>,
-    /// Cible de collecte pour un collecteur
     pub cible: Option<(isize, isize)>,
-    /// Ensemble des cases déjà visitées
     pub visites: HashSet<(isize, isize)>,
-    /// Modules installés sur le robot (spécialisation)
     pub modules: Vec<ModuleRobot>,
 }
 
-/// Système de création des robots (explorateurs et collecteurs) lors de l'initialisation.
+/// Système de création des robots lors de l'initialisation.
 pub fn creer_robots(
     mut commandes: Commands,
     station: Res<PositionStation>,
     mut robots_crees: ResMut<crate::systemes::RobotsCrees>,
 ) {
-    // On crée les robots une seule fois
     if robots_crees.0 {
         return;
     }
 
-    // Création de 5 explorateurs spécialisés en imagerie haute résolution
+    // Création de 5 explorateurs (couleur verte)
     let nb_explorateurs = 3;
     for _ in 0..nb_explorateurs {
         let translation = Vec3::new(
@@ -67,8 +65,7 @@ pub fn creer_robots(
         commandes.spawn((
             SpriteBundle {
                 sprite: Sprite {
-                    // Couleur verte pour les explorateurs
-                    color: Color::rgb(0.0, 1.0, 0.0),
+                    color: Color::rgb(0.0, 1.0, 0.0), // Vert
                     custom_size: Some(Vec2::splat(TAILLE_CASE)),
                     ..Default::default()
                 },
@@ -89,10 +86,11 @@ pub fn creer_robots(
         ));
     }
 
-    // Création des collecteurs spécialisés (3 pour l'analyse chimique et 3 pour le forage)
+    // Création des collecteurs spécialisés
     let nb_collecteurs_analyse = 1;
     let nb_collecteurs_forage = 1;
 
+    // Collecteurs pour l'énergie (couleur bleue)
     for _ in 0..nb_collecteurs_analyse {
         let translation = Vec3::new(
             station.x as f32 * TAILLE_CASE - (LARGEUR_CARTE as f32 * TAILLE_CASE) / 2.0,
@@ -102,8 +100,7 @@ pub fn creer_robots(
         commandes.spawn((
             SpriteBundle {
                 sprite: Sprite {
-                    // Couleur bleue pour les collecteurs spécialisés en énergie (analyse chimique)
-                    color: Color::rgb(0.0, 0.5, 1.0),
+                    color: Color::rgb(0.0, 0.5, 1.0), // Bleu
                     custom_size: Some(Vec2::splat(TAILLE_CASE)),
                     ..Default::default()
                 },
@@ -124,6 +121,7 @@ pub fn creer_robots(
         ));
     }
 
+    // Collecteurs pour les minerais (couleur violette)
     for _ in 0..nb_collecteurs_forage {
         let translation = Vec3::new(
             station.x as f32 * TAILLE_CASE - (LARGEUR_CARTE as f32 * TAILLE_CASE) / 2.0,
@@ -133,8 +131,7 @@ pub fn creer_robots(
         commandes.spawn((
             SpriteBundle {
                 sprite: Sprite {
-                    // Couleur violette pour les collecteurs spécialisés en minerais (forage)
-                    color: Color::rgb(0.5, 0.0, 1.0),
+                    color: Color::rgb(0.5, 0.0, 1.0), // Violet
                     custom_size: Some(Vec2::splat(TAILLE_CASE)),
                     ..Default::default()
                 },
@@ -155,13 +152,12 @@ pub fn creer_robots(
         ));
     }
 
-    // Indique que les robots ont été créés
     robots_crees.0 = true;
 }
 
 /// Système de déplacement des robots.
-/// Les explorateurs se déplacent de façon aléatoire et collectent des découvertes,
-/// tandis que les collecteurs se dirigent vers des ressources détectées et retournent à la station.
+/// Pour le calcul du chemin, nous utilisons AsyncComputeTaskPool afin d'exécuter le BFS de façon asynchrone.
+/// Des événements sont enregistrés lors de déplacements ou de collectes.
 pub fn deplacer_robots(
     mut commandes: Commands,
     mut minuterie: ResMut<crate::systemes::MinuterieRobot>,
@@ -170,16 +166,17 @@ pub fn deplacer_robots(
     mut carte: ResMut<Carte>,
     station: Res<PositionStation>,
     mut depot: ResMut<DepotStation>,
+    mut evenements: ResMut<crate::utils::Evenements>,
 ) {
-    // On exécute ce système seulement quand le timer est terminé.
     if !minuterie.timer.tick(temps.delta()).finished() {
         return;
     }
 
+    let task_pool = AsyncComputeTaskPool::get();
     let mut rng = rand::thread_rng();
     let directions = [(0, 1), (0, -1), (1, 0), (-1, 0)];
 
-    for (_entite, mut robot, mut transform) in requete.iter_mut() {
+    for (entity, mut robot, mut transform) in requete.iter_mut() {
         match robot.role {
             RoleRobot::Explorateur => {
                 match robot.etat {
@@ -187,7 +184,6 @@ pub fn deplacer_robots(
                         let position_actuelle = (robot.x, robot.y);
                         robot.visites.insert(position_actuelle);
 
-                        // Calcul des déplacements possibles (sans obstacles)
                         let deplacements_possibles: Vec<(isize, isize)> = directions.iter()
                             .map(|(dx, dy)| (robot.x + dx, robot.y + dy))
                             .filter(|(nx, ny)| {
@@ -198,7 +194,6 @@ pub fn deplacer_robots(
                             })
                             .collect();
 
-                        // Privilégier les cases non visitées
                         let deplacements_non_visites: Vec<(isize, isize)> = deplacements_possibles.iter()
                             .cloned()
                             .filter(|pos| !robot.visites.contains(pos))
@@ -212,12 +207,18 @@ pub fn deplacer_robots(
                             (robot.x, robot.y)
                         };
 
+                        // Enregistrement de l'événement de déplacement
+                        evenements.events.push(Evenement::RobotDeplace {
+                            robot_id: entity.index() as u32,
+                            from: (robot.x, robot.y),
+                            to: (nouveau_x, nouveau_y),
+                        });
+
                         robot.x = nouveau_x;
                         robot.y = nouveau_y;
                         transform.translation.x = nouveau_x as f32 * TAILLE_CASE - (carte.largeur as f32 * TAILLE_CASE) / 2.0;
                         transform.translation.y = nouveau_y as f32 * TAILLE_CASE - (carte.hauteur as f32 * TAILLE_CASE) / 2.0;
 
-                        // Détection de ressources sur la case atteinte
                         if nouveau_x >= 0 && nouveau_y >= 0 && nouveau_x < carte.largeur as isize && nouveau_y < carte.hauteur as isize {
                             let tuile = carte.donnees[nouveau_y as usize][nouveau_x as usize];
                             if tuile == TypePixel::Energie || tuile == TypePixel::Minerai {
@@ -233,10 +234,8 @@ pub fn deplacer_robots(
                         }
                     },
                     EtatRobot::Retourner => {
-                        // Chemin vers la station
                         let cible = (station.x as isize, station.y as isize);
                         if robot.x == cible.0 && robot.y == cible.1 {
-                            // Dépôt des découvertes par l'explorateur
                             for dec in &robot.decouvertes {
                                 if dec.resource == TypePixel::Energie || dec.resource == TypePixel::Minerai {
                                     enregistrer_decouverte(&mut depot, dec.clone());
@@ -245,9 +244,22 @@ pub fn deplacer_robots(
                             robot.decouvertes.clear();
                             robot.etat = EtatRobot::Explorer;
                         } else {
-                            if let Some(chemin) = calculer_chemin_bfs(&carte, (robot.x, robot.y), cible) {
+                            // Calcul asynchrone du chemin via le worker pool
+                            let current_pos = (robot.x, robot.y);
+                            let target = cible;
+                            let carte_clone = carte.clone(); // Clonage de la carte pour la tâche
+                            let chemin_future = task_pool.spawn(async move {
+                                calculer_chemin_bfs(&carte_clone, current_pos, target)
+                            });
+                            if let Some(chemin) = future::block_on(chemin_future) {
                                 if chemin.len() > 1 {
                                     let (nx, ny) = chemin[1];
+                                    // Enregistrement de l'événement de déplacement
+                                    evenements.events.push(Evenement::RobotDeplace {
+                                        robot_id: entity.index() as u32,
+                                        from: (robot.x, robot.y),
+                                        to: (nx, ny),
+                                    });
                                     robot.x = nx;
                                     robot.y = ny;
                                     transform.translation.x = nx as f32 * TAILLE_CASE - (carte.largeur as f32 * TAILLE_CASE) / 2.0;
@@ -263,7 +275,6 @@ pub fn deplacer_robots(
             RoleRobot::Collecteur => {
                 match robot.etat {
                     EtatRobot::Explorer => {
-                        // Définir la ressource cible en fonction de la spécialisation du collecteur
                         let resource_filtre = if robot.modules.contains(&ModuleRobot::AnalyseChimique) {
                             TypePixel::Energie
                         } else if robot.modules.contains(&ModuleRobot::Forage) {
@@ -272,7 +283,6 @@ pub fn deplacer_robots(
                             TypePixel::Vide
                         };
 
-                        // Si le collecteur se trouve sur la station, il cherche une découverte correspondant à sa spécialisation
                         if robot.x == station.x as isize && robot.y == station.y as isize {
                             if robot.cible.is_none() {
                                 if let Some(index) = depot.decouvertes.iter().position(|d|
@@ -286,7 +296,6 @@ pub fn deplacer_robots(
                             }
                         }
 
-                        // Si une cible est définie, on calcule le chemin vers celle-ci
                         if let Some((cx, cy)) = robot.cible {
                             if let Some(chemin) = calculer_chemin_bfs(&carte, (robot.x, robot.y), (cx, cy)) {
                                 if chemin.len() > 1 {
@@ -296,7 +305,6 @@ pub fn deplacer_robots(
                                     transform.translation.x = nx as f32 * TAILLE_CASE - (carte.largeur as f32 * TAILLE_CASE) / 2.0;
                                     transform.translation.y = ny as f32 * TAILLE_CASE - (carte.hauteur as f32 * TAILLE_CASE) / 2.0;
                                 }
-                                // Arrivé sur la case cible : tentative de récolte
                                 if robot.x == cx && robot.y == cy {
                                     let tuile = &mut carte.donnees[cy as usize][cx as usize];
                                     if *tuile == resource_filtre {
@@ -306,6 +314,12 @@ pub fn deplacer_robots(
                                         robot.cargo = Some((resource_type, cx, cy));
                                         robot.cible = None;
                                         robot.etat = EtatRobot::Retourner;
+                                        // Enregistrement de l'événement de collecte
+                                        evenements.events.push(Evenement::RessourceCollectee {
+                                            robot_id: entity.index() as u32,
+                                            resource: resource_type,
+                                            position: (cx, cy),
+                                        });
                                     } else {
                                         robot.cible = None;
                                         robot.etat = EtatRobot::Retourner;
@@ -321,26 +335,31 @@ pub fn deplacer_robots(
                     EtatRobot::Retourner => {
                         let cible = (station.x as isize, station.y as isize);
                         if robot.x == cible.0 && robot.y == cible.1 {
-                            // Dépôt de la ressource collectée par le collecteur
                             if let Some((resource, res_x, res_y)) = robot.cargo.take() {
                                 println!("Collecteur dépose la ressource {:?} collectée de ({}, {}) à la station", resource, res_x, res_y);
                                 match resource {
                                     TypePixel::Energie => {
                                         depot.stock_energie += 1;
-                                        println!("Stock d'énergie à la station: {}", depot.stock_energie);
                                         if depot.stock_energie >= 3 {
                                             depot.stock_energie -= 3;
-                                            println!("3 énergies accumulées --> Création d'un nouveau collecteur spécialisé en minerais.");
+                                            println!("3 énergies accumulées ! Création d'un nouveau collecteur spécialisé en minerais.");
                                             creer_collecteur(&mut commandes, &station, ModuleRobot::Forage);
+                                            evenements.events.push(Evenement::NouveauRobotCree {
+                                                robot_role: RoleRobot::Collecteur,
+                                                modules: vec![ModuleRobot::Forage],
+                                            });
                                         }
                                     }
                                     TypePixel::Minerai => {
                                         depot.stock_minerai += 1;
-                                        println!("Stock de minerais à la station: {}", depot.stock_minerai);
                                         if depot.stock_minerai >= 3 {
                                             depot.stock_minerai -= 3;
-                                            println!("3 minerais accumulés --> Création d'un nouveau collecteur spécialisé en énergie.");
+                                            println!("3 minerais accumulés ! Création d'un nouveau collecteur spécialisé en énergie.");
                                             creer_collecteur(&mut commandes, &station, ModuleRobot::AnalyseChimique);
+                                            evenements.events.push(Evenement::NouveauRobotCree {
+                                                robot_role: RoleRobot::Collecteur,
+                                                modules: vec![ModuleRobot::AnalyseChimique],
+                                            });
                                         }
                                     }
                                     _ => {}
@@ -367,8 +386,7 @@ pub fn deplacer_robots(
     }
 }
 
-/// Fonction permettant de créer un nouveau collecteur à la station en fonction du module demandé.
-/// Selon le module, la couleur et la spécialisation du collecteur sont définies.
+/// Crée un nouveau collecteur à la station selon le module demandé.
 pub fn creer_collecteur(
     commandes: &mut Commands,
     station: &PositionStation,
