@@ -1,5 +1,3 @@
-// src/robot.rs
-
 use bevy::prelude::*;
 use bevy::tasks::AsyncComputeTaskPool;
 use futures_lite::future;
@@ -86,7 +84,7 @@ pub fn creer_robots(
         ));
     }
 
-    // Création des collecteurs spécialisés
+    // Création des collecteurs spécialisés par défaut
     let nb_collecteurs_analyse = 1;
     let nb_collecteurs_forage = 1;
 
@@ -156,8 +154,8 @@ pub fn creer_robots(
 }
 
 /// Système de déplacement des robots.
-/// Pour le calcul du chemin, nous utilisons AsyncComputeTaskPool afin d'exécuter le BFS de façon asynchrone.
-/// Des événements sont enregistrés lors de déplacements ou de collectes.
+/// Le calcul du chemin est effectué via AsyncComputeTaskPool pour éviter de bloquer le thread principal.
+/// Des événements sont enregistrés pour l'event sourcing.
 pub fn deplacer_robots(
     mut commandes: Commands,
     mut minuterie: ResMut<crate::systemes::MinuterieRobot>,
@@ -166,7 +164,7 @@ pub fn deplacer_robots(
     mut carte: ResMut<Carte>,
     station: Res<PositionStation>,
     mut depot: ResMut<DepotStation>,
-    mut evenements: ResMut<crate::utils::Evenements>,
+    mut evenements: ResMut<Evenements>,
 ) {
     if !minuterie.timer.tick(temps.delta()).finished() {
         return;
@@ -184,7 +182,8 @@ pub fn deplacer_robots(
                         let position_actuelle = (robot.x, robot.y);
                         robot.visites.insert(position_actuelle);
 
-                        let deplacements_possibles: Vec<(isize, isize)> = directions.iter()
+                        let deplacements_possibles: Vec<(isize, isize)> = directions
+                            .iter()
                             .map(|(dx, dy)| (robot.x + dx, robot.y + dy))
                             .filter(|(nx, ny)| {
                                 *nx >= 0 && *ny >= 0 &&
@@ -194,7 +193,8 @@ pub fn deplacer_robots(
                             })
                             .collect();
 
-                        let deplacements_non_visites: Vec<(isize, isize)> = deplacements_possibles.iter()
+                        let deplacements_non_visites: Vec<(isize, isize)> = deplacements_possibles
+                            .iter()
                             .cloned()
                             .filter(|pos| !robot.visites.contains(pos))
                             .collect();
@@ -247,14 +247,13 @@ pub fn deplacer_robots(
                             // Calcul asynchrone du chemin via le worker pool
                             let current_pos = (robot.x, robot.y);
                             let target = cible;
-                            let carte_clone = carte.clone(); // Clonage de la carte pour la tâche
+                            let carte_clone = carte.clone(); // Clonage pour la tâche
                             let chemin_future = task_pool.spawn(async move {
                                 calculer_chemin_bfs(&carte_clone, current_pos, target)
                             });
                             if let Some(chemin) = future::block_on(chemin_future) {
                                 if chemin.len() > 1 {
                                     let (nx, ny) = chemin[1];
-                                    // Enregistrement de l'événement de déplacement
                                     evenements.events.push(Evenement::RobotDeplace {
                                         robot_id: entity.index() as u32,
                                         from: (robot.x, robot.y),
@@ -314,7 +313,6 @@ pub fn deplacer_robots(
                                         robot.cargo = Some((resource_type, cx, cy));
                                         robot.cible = None;
                                         robot.etat = EtatRobot::Retourner;
-                                        // Enregistrement de l'événement de collecte
                                         evenements.events.push(Evenement::RessourceCollectee {
                                             robot_id: entity.index() as u32,
                                             resource: resource_type,

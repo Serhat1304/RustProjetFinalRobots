@@ -1,12 +1,10 @@
-// src/carte.rs
-
 use bevy::prelude::*;
 use noise::{NoiseFn, Perlin};
 use rand::{prelude::*, SeedableRng};
 
-/// Largeur de la carte en nombre de cases.
+/// Largeur de la carte (utilisée pour la génération principale).
 pub const LARGEUR_CARTE: usize = 50;
-/// Hauteur de la carte en nombre de cases.
+/// Hauteur de la carte (utilisée pour la génération principale).
 pub const HAUTEUR_CARTE: usize = 30;
 /// Taille d'une case en pixels.
 pub const TAILLE_CASE: f32 = 20.0;
@@ -38,7 +36,7 @@ pub struct SeedCarte {
 }
 
 /// Ressource représentant la carte avec ses données, largeur et hauteur.
-/// Le derive Clone est utile pour le partage ou le clonage lors des calculs asynchrones.
+/// Le derive Clone permet de cloner la carte pour des calculs asynchrones ou tests.
 #[derive(Resource, Clone)]
 pub struct Carte {
     pub donnees: Vec<Vec<TypePixel>>,
@@ -93,10 +91,10 @@ pub fn generer_carte(mut commandes: Commands, seed_carte: Res<SeedCarte>) {
     let bruit_perlin = Perlin::new(seed_carte.seed as u32);
     let mut generateur_aleatoire = rand::rngs::StdRng::seed_from_u64(seed_carte.seed);
 
-    // Initialisation de la carte avec des cases vides
+    // Création de la carte en utilisant les constantes LARGEUR_CARTE et HAUTEUR_CARTE
     let mut carte = vec![vec![TypePixel::Vide; LARGEUR_CARTE]; HAUTEUR_CARTE];
 
-    // Placement des obstacles en fonction du bruit de Perlin
+    // Placement des obstacles selon le bruit de Perlin
     for y in 0..HAUTEUR_CARTE {
         for x in 0..LARGEUR_CARTE {
             let valeur_bruit = bruit_perlin.get([x as f64 * 0.1, y as f64 * 0.1]);
@@ -108,7 +106,7 @@ pub fn generer_carte(mut commandes: Commands, seed_carte: Res<SeedCarte>) {
 
     limiter_taille_obstacles(&mut carte);
 
-    // Ajout aléatoire de ressources ou sites scientifiques dans les cases vides
+    // Remplissage aléatoire des cases vides avec des ressources ou des sites scientifiques
     for y in 0..HAUTEUR_CARTE {
         for x in 0..LARGEUR_CARTE {
             if carte[y][x] == TypePixel::Vide {
@@ -167,11 +165,17 @@ pub fn generer_carte(mut commandes: Commands, seed_carte: Res<SeedCarte>) {
     }
 }
 
-/// Place la station sur une case vide et retourne ses coordonnées.
-fn placer_station(carte: &mut Vec<Vec<TypePixel>>, generateur_aleatoire: &mut rand::rngs::StdRng) -> (usize, usize) {
+/// Place la station sur une case vide de la grille et retourne ses coordonnées.
+/// Cette fonction utilise les dimensions réelles de la grille passée en paramètre.
+fn placer_station(
+    carte: &mut Vec<Vec<TypePixel>>,
+    generateur_aleatoire: &mut rand::rngs::StdRng,
+) -> (usize, usize) {
+    let hauteur = carte.len();
+    let largeur = if hauteur > 0 { carte[0].len() } else { 0 };
     loop {
-        let x = generateur_aleatoire.gen_range(0..LARGEUR_CARTE);
-        let y = generateur_aleatoire.gen_range(0..HAUTEUR_CARTE);
+        let x = generateur_aleatoire.gen_range(0..largeur);
+        let y = generateur_aleatoire.gen_range(0..hauteur);
         if carte[y][x] == TypePixel::Vide {
             carte[y][x] = TypePixel::Station;
             return (x, y);
@@ -179,18 +183,21 @@ fn placer_station(carte: &mut Vec<Vec<TypePixel>>, generateur_aleatoire: &mut ra
     }
 }
 
-/// Limite la taille des obstacles en transformant certaines cases en cases vides si le groupe est trop grand.
+/// Limite la taille des obstacles en parcourant la grille en fonction de ses dimensions réelles.
+/// Si un groupe d'obstacles dépasse TAILLE_MAX_OBSTACLE, certaines cases sont transformées en Vide.
 fn limiter_taille_obstacles(carte: &mut Vec<Vec<TypePixel>>) {
+    let hauteur = carte.len();
+    let largeur = if hauteur > 0 { carte[0].len() } else { 0 };
     let directions = [(0, 1), (1, 0), (0, -1), (-1, 0)];
-    for y in 0..HAUTEUR_CARTE {
-        for x in 0..LARGEUR_CARTE {
+    for y in 0..hauteur {
+        for x in 0..largeur {
             if carte[y][x] == TypePixel::Obstacle {
                 let mut taille_obstacle = 1;
                 for (dx, dy) in directions.iter() {
                     let mut nx = x as isize + dx;
                     let mut ny = y as isize + dy;
-                    while nx >= 0 && nx < LARGEUR_CARTE as isize &&
-                        ny >= 0 && ny < HAUTEUR_CARTE as isize &&
+                    while nx >= 0 && (nx as usize) < largeur &&
+                        ny >= 0 && (ny as usize) < hauteur &&
                         carte[ny as usize][nx as usize] == TypePixel::Obstacle {
                         taille_obstacle += 1;
                         if taille_obstacle > TAILLE_MAX_OBSTACLE {
@@ -208,6 +215,7 @@ fn limiter_taille_obstacles(carte: &mut Vec<Vec<TypePixel>>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::SeedableRng;
 
     #[test]
     fn test_est_obstacle() {
@@ -226,5 +234,30 @@ mod tests {
         // Test des bornes
         assert!(carte.est_obstacle(-1, 0));
         assert!(carte.est_obstacle(0, 2));
+    }
+
+    #[test]
+    fn test_placer_station() {
+        // Création d'une carte 3x3 remplie de Vide
+        let mut donnees = vec![vec![TypePixel::Vide; 3]; 3];
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        let (x, y) = placer_station(&mut donnees, &mut rng);
+        // La case choisie doit désormais être Station
+        assert_eq!(donnees[y][x], TypePixel::Station);
+        // Les coordonnées doivent être dans les limites de la grille
+        assert!(x < 3 && y < 3);
+    }
+
+    #[test]
+    fn test_limiter_taille_obstacles() {
+        // Création d'une carte 1x7 avec des obstacles continus
+        let mut donnees = vec![vec![TypePixel::Obstacle; 7]];
+        // Avant limitation, la ligne contient 7 obstacles
+        let count_before = donnees[0].iter().filter(|&&p| p == TypePixel::Obstacle).count();
+        assert_eq!(count_before, 7);
+        limiter_taille_obstacles(&mut donnees);
+        // Après limitation, on s'attend à ce qu'au moins un obstacle soit transformé en Vide
+        let count_after = donnees[0].iter().filter(|&&p| p == TypePixel::Obstacle).count();
+        assert!(count_after < 7);
     }
 }

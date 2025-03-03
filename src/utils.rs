@@ -1,5 +1,3 @@
-// src/utils.rs
-
 use bevy::prelude::*;
 use noise::Perlin;
 use rand::{prelude::*, SeedableRng};
@@ -10,7 +8,11 @@ use crate::carte::DepotStation;
 
 /// Calcule un chemin entre deux points sur la carte en utilisant l'algorithme BFS.
 /// Retourne Some(chemin) si un chemin est trouvé, ou None sinon.
-pub fn calculer_chemin_bfs(carte: &Carte, depart: (isize, isize), arrivee: (isize, isize)) -> Option<Vec<(isize, isize)>> {
+pub fn calculer_chemin_bfs(
+    carte: &Carte,
+    depart: (isize, isize),
+    arrivee: (isize, isize),
+) -> Option<Vec<(isize, isize)>> {
     if depart == arrivee {
         return Some(vec![depart]);
     }
@@ -57,9 +59,15 @@ pub fn calculer_chemin_bfs(carte: &Carte, depart: (isize, isize), arrivee: (isiz
 pub fn enregistrer_decouverte(depot: &mut DepotStation, decouverte: Decouverte) {
     if let Some(existante) = depot.decouvertes.iter().find(|d| d.x == decouverte.x && d.y == decouverte.y) {
         if existante.resource != decouverte.resource {
-            println!("Conflit détecté pour la ressource en ({}, {}): {:?} vs {:?}", decouverte.x, decouverte.y, existante.resource, decouverte.resource);
+            println!(
+                "Conflit détecté pour la ressource en ({}, {}): {:?} vs {:?}",
+                decouverte.x, decouverte.y, existante.resource, decouverte.resource
+            );
         } else {
-            println!("Découverte déjà enregistrée pour la ressource en ({}, {})", decouverte.x, decouverte.y);
+            println!(
+                "Découverte déjà enregistrée pour la ressource en ({}, {})",
+                decouverte.x, decouverte.y
+            );
         }
     } else {
         depot.decouvertes.push(decouverte.clone());
@@ -148,5 +156,24 @@ mod tests {
         // Ajouter une découverte identique ne doit pas augmenter le nombre
         enregistrer_decouverte(&mut depot, decouverte);
         assert_eq!(depot.decouvertes.len(), 1);
+    }
+
+    #[test]
+    fn test_evenements_default() {
+        let evenements = Evenements::default();
+        assert_eq!(evenements.events.len(), 0);
+    }
+
+    #[test]
+    fn test_evenement_robot_deplace() {
+        let evt = Evenement::RobotDeplace { robot_id: 42, from: (0, 0), to: (1, 1) };
+        match evt {
+            Evenement::RobotDeplace { robot_id, from, to } => {
+                assert_eq!(robot_id, 42);
+                assert_eq!(from, (0, 0));
+                assert_eq!(to, (1, 1));
+            },
+            _ => panic!("Mauvais type d'événement"),
+        }
     }
 }

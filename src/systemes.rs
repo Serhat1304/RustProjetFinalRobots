@@ -1,7 +1,4 @@
-// src/systemes.rs
-
 use bevy::prelude::*;
-use std::collections::HashSet;
 use crate::utils::{Evenements, Evenement};
 
 /// Ressource qui contrôle la fréquence de déplacement des robots.
@@ -71,8 +68,7 @@ pub fn synchroniser_pixels_carte(
 }
 
 /// Système de traitement des événements.
-/// Ici, nous affichons simplement les événements dans la console, mais ce système
-/// pourrait être étendu pour réaliser d'autres traitements (comme l'enregistrement dans une base de données, etc.).
+/// Ici, nous affichons simplement les événements dans la console.
 pub fn traiter_evenements(mut evenements: ResMut<Evenements>) {
     if !evenements.events.is_empty() {
         for evt in evenements.events.drain(..) {

@@ -1,5 +1,3 @@
-// src/main.rs
-
 mod carte;
 mod robot;
 mod systemes;
@@ -8,7 +6,10 @@ mod utils;
 use bevy::prelude::*;
 use carte::{generer_carte, PositionStation, Carte, SeedCarte, DepotStation};
 use robot::{creer_robots, deplacer_robots};
-use systemes::{initialiser_camera, configurer_minuterie_robot, initialiser_robots_crees, synchroniser_pixels_carte, traiter_evenements};
+use systemes::{
+    initialiser_camera, configurer_minuterie_robot, initialiser_robots_crees, synchroniser_pixels_carte,
+    traiter_evenements,
+};
 use utils::{obtenir_seed_depuis_arguments, generer_seed_aleatoire, Evenements};
 
 fn main() {
