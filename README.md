@@ -1,6 +1,6 @@
 # RustProjetFinalRobots
 
-# Simulation de Robots sur Carte 2D en Rust
+## Simulation de Robots sur Carte 2D en Rust
 
 Ce projet est une simulation en 2D d'une carte générée aléatoirement sur laquelle évoluent des robots. La carte contient une station, des obstacles et trois types de ressources (énergie, minerais et sites scientifiques). Deux types de robots sont créés : pour explorer la carte et collecter les ressources.
 
@@ -33,7 +33,7 @@ Le projet est organisé en plusieurs modules pour séparer les responsabilités 
   *Points de configuration importants* :  
   - `LARGEUR_CARTE`, `HAUTEUR_CARTE`  
   - `SEUIL_OBSTACLE` pour le bruit de Perlin  
-  - La répartition des ressources est définie dans un `match` sur un nombre aléatoire (voir section [Modification des Pourcentages](#modification-des-pourcentages-de-génération-des-éléments-de-la-carte)). [Test](#prérequis)
+  - La répartition des ressources est définie dans un `match` sur un nombre aléatoire (voir section [Modification des Pourcentages](#modification-des-pourcentages-de-génération-des-éléments-de-la-carte)).
 
 - **src/robot.rs**  
   Gère la création et le comportement des robots. Les robots sont divisés en deux rôles (explorateurs et collecteurs) et comportent des modules spécifiques qui définissent leurs capacités.
@@ -63,3 +63,11 @@ Lors du lancement, le programme récupère un seed depuis la ligne de commande s
 ## Configuration et Paramétrage
 
 ### Lancement avec un Seed Spécifique
+Pour reproduire une carte spécifique, lancez le programme en passant le seed en argument :
+
+```bash
+cargo run -- 123456789
+```
+Ici, 123456789 est le seed qui sera utilisé pour la génération de la carte.
+
+
