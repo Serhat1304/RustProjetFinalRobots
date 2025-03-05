@@ -107,3 +107,14 @@ carte[y][x] = match generateur_aleatoire.gen_range(0..100) {
 - Énergie : La plage 0..=5 signifie environ 6% de chances.
 - Minerais : La plage 6..=10 représente environ 5% de chances.
 - Sites Scientifiques : La plage 11..=14 correspond à environ 4% de chances.
+
+## Test
+
+Tests
+Des tests unitaires ont été implémentés pour vérifier la génération de la carte, le placement de la station, le calcul du chemin, et le comportement des robots.
+
+Pour exécuter les tests, lancez la commande :
+
+```bash
+cargo test
+```
