@@ -37,7 +37,7 @@ Le projet est organisé en plusieurs modules pour séparer les responsabilités 
   *Points de configuration importants* :  
   - `LARGEUR_CARTE`, `HAUTEUR_CARTE`  
   - `SEUIL_OBSTACLE` pour le bruit de Perlin  
-  - La répartition des ressources est définie dans un `match` sur un nombre aléatoire (voir section [Modification des Pourcentages](#modification-des-pourcentages-de-génération-des-éléments-de-la-carte)).
+  - La répartition des ressources est définie dans un `match` sur un nombre aléatoire (voir section [Modification des Pourcentages](#modification-des-pourcentages-de-génération-des-éléments-de-la-carte)). [Test](#prérequis)
 
 - **src/robot.rs**  
   Gère la création et le comportement des robots. Les robots sont divisés en deux rôles (explorateurs et collecteurs) et comportent des modules spécifiques qui définissent leurs capacités.
