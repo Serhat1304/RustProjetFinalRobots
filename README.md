@@ -78,3 +78,29 @@ Recherchez cette ligne :
 ```rust
 Timer::from_seconds(0.3, TimerMode::Repeating)
 ```
+
+### Modification du Nombre de Robots
+
+Le nombre de robots est défini dans le module src/robot.rs dans la fonction creer_robots.
+Les variables suivantes contrôlent le nombre de chaque type de robot par défaut :
+```rust
+let nb_explorateurs = 3;
+let nb_collecteurs_analyse = 1;
+let nb_collecteurs_forage = 1;
+```
+
+### Modification des Pourcentages de Génération des Éléments de la Carte
+La répartition des éléments (énergie, minerais, site scientifique) sur la carte est réalisée dans la fonction generer_carte du module src/carte.rs.
+Voici le bloc de code concerné :
+
+```rust
+carte[y][x] = match generateur_aleatoire.gen_range(0..100) {
+    0..=5   => TypePixel::Energie,
+    6..=10  => TypePixel::Minerai,
+    11..=14 => TypePixel::SiteScientifique,
+    _       => TypePixel::Vide,
+};
+```
+Énergie : La plage 0..=5 signifie environ 6% de chances.
+Minerais : La plage 6..=10 représente environ 5% de chances.
+Sites Scientifiques : La plage 11..=14 correspond à environ 4% de chances.
