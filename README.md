@@ -1,9 +1,5 @@
 # RustProjetFinalRobots
 
-cargo run = génération aléatoire de la map
-<br>
-cargo run -- xxxxxx = Génération d'un seed x donné
-
 # Simulation de Robots sur Carte 2D en Rust
 
 Ce projet est une simulation en 2D d'une carte générée aléatoirement sur laquelle évoluent des robots. La carte contient une station, des obstacles et trois types de ressources (énergie, minerais et sites scientifiques). Deux types de robots sont créés : pour explorer la carte et collecter les ressources.
@@ -58,3 +54,9 @@ Le projet est organisé en plusieurs modules pour séparer les responsabilités 
 Pour compiler et lancer le projet, exécutez :
 
 cargo run
+
+Lors du lancement, le programme récupère un seed depuis la ligne de commande s’il est fourni, ou en génère un aléatoirement. Le seed utilisé est affiché dans la console.
+
+## Configuration et Paramétrage
+
+### Lancement avec un Seed Spécifique
