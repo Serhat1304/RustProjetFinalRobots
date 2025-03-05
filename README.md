@@ -56,6 +56,7 @@ Pour compiler et lancer le projet, exécutez :
 
 ```bash
 cargo run
+```
 
 Lors du lancement, le programme récupère un seed depuis la ligne de commande s’il est fourni, ou en génère un aléatoirement. Le seed utilisé est affiché dans la console.
 
