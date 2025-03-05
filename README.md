@@ -44,6 +44,15 @@ Le projet est organisé en plusieurs modules pour séparer les responsabilités 
 - **src/utils.rs**  
   Fournit des utilitaires comme le calcul de chemin (BFS), la gestion des événements, la récupération ou génération d’un seed et l’enregistrement des découvertes.
 
+## Code couleurs
+Code couleurs :
+- Obstacle -> gris foncé
+- Energie  -> jaune
+- Minerai  -> marron
+- SiteScientifique  -> cyan
+- Station -> rouge
+- Vide  -> gris clair
+  
 ## Installation et Exécution
 
 ### Prérequis
