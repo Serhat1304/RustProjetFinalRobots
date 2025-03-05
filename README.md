@@ -73,6 +73,7 @@ Ici, 123456789 est le seed qui sera utilisé pour la génération de la carte.
 ### Modification de la Vitesse des Robots
 
 La vitesse de déplacement des robots est contrôlée via une minuterie dans le module src/systemes.rs.
+
 Recherchez cette ligne :
 
 ```rust
@@ -82,6 +83,7 @@ Timer::from_seconds(0.3, TimerMode::Repeating)
 ### Modification du Nombre de Robots
 
 Le nombre de robots est défini dans le module src/robot.rs dans la fonction creer_robots.
+
 Les variables suivantes contrôlent le nombre de chaque type de robot par défaut :
 ```rust
 let nb_explorateurs = 3;
