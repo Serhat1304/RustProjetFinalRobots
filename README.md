@@ -91,6 +91,7 @@ let nb_collecteurs_forage = 1;
 
 ### Modification des Pourcentages de Génération des Éléments de la Carte
 La répartition des éléments (énergie, minerais, site scientifique) sur la carte est réalisée dans la fonction generer_carte du module src/carte.rs.
+
 Voici le bloc de code concerné :
 
 ```rust
@@ -101,6 +102,6 @@ carte[y][x] = match generateur_aleatoire.gen_range(0..100) {
     _       => TypePixel::Vide,
 };
 ```
-Énergie : La plage 0..=5 signifie environ 6% de chances.
-Minerais : La plage 6..=10 représente environ 5% de chances.
-Sites Scientifiques : La plage 11..=14 correspond à environ 4% de chances.
+- Énergie : La plage 0..=5 signifie environ 6% de chances.
+- Minerais : La plage 6..=10 représente environ 5% de chances.
+- Sites Scientifiques : La plage 11..=14 correspond à environ 4% de chances.
